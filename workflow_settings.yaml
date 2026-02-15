@@ -1,0 +1,4 @@
+defaultProject: data-dev-cura
+defaultDataset: dataform
+defaultAssertionDataset: dataform_assertions
+dataformCoreVersion: 3.0.37
