@@ -1,0 +1,1 @@
+declare({schema: 'DWH_Curated', name: "CORTCUSTOMER"});
