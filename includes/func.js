@@ -26,7 +26,19 @@ function parse_date(col, dummies = ['19000101', '00010101', '99991231']) {
           END)`;
 }
 
+/**
+ * Generates a SHA256 hash from a list of fields.
+ * Useful for creating Surrogate Keys.
+ * @param {string[]} fields - Array of column names to be hashed.
+ */
+function generate_hash(fields) {
+  // Joins the array into a comma-separated string for the STRUCT
+  const fieldList = fields.join(", ");
+  return `SHA256(TO_JSON_STRING(STRUCT(${fieldList})))`;
+}
+
 module.exports = { 
     clean_null_string, 
-    parse_date 
+    parse_date,
+    generate_hash
 };
