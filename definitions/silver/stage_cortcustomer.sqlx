@@ -1,82 +1,72 @@
 config {
     type: "table",
     schema: "silver",
-    name: "stage_customer",
-    description: "Bảng Staging chuẩn hóa thông tin khách hàng từ hệ thống Core (CORTCUSTOMER). Thực hiện làm sạch chuỗi rác, xử lý ngày mặc định và đặt tên theo chuẩn Semantic.",
+    name: "stage_cortcustomer",
+    description: "Bảng Staging chuẩn hóa thông tin khách hàng từ hệ thống Core (CORTCUSTOMER). Thực hiện làm sạch dữ liệu và parse ngày tháng.",
     tags: ["silver", "customer", "daily"],
     columns: {
-        // Keys & Identifiers
-        customer_key: "Mã định danh duy nhất của khách hàng (Source: CUST_CD)",
-        customer_alternate_id: "Số tài khoản lưu ký/giao dịch (Source: CUST_NO)",
-        
-        // Flags
-        is_deleted: "Trạng thái xóa: True nếu hồ sơ đã bị xóa (DEL_CD = 9)",
-        is_money_confirmed: "Xác nhận kiểm tra tiền (True: YES; False: NO)",
-        is_stock_confirmed: "Xác nhận kiểm tra chứng khoán (True: YES; False: NO)",
-        is_taxable: "Trạng thái thu thuế: True: Có thu thuế; False: Không thu (Miễn thuế)",
-        has_email_flag: "Xác nhận khách hàng có sử dụng Email hay không",
-
-        // Classification Codes
-        legal_entity_type_code: "Loại hình pháp lý: 1: Cá nhân; 2: Tổ chức",
-        residency_type_code: "Loại hình cư trú: 1: Trong nước; 2: Nước ngoài",
-        gender_code: "Giới tính: 1: Nam; 2: Nữ",
-        id_type_code: "Loại giấy tờ định danh (CMND, Passport, CCCD, v.v.)",
-        occupation_code: "Mã nghề nghiệp của khách hàng",
-        acquisition_channel_code: "Kênh tiếp cận khách hàng (Internet, Báo chí, QC, v.v.)",
-        account_status_code: "Trạng thái tài khoản: 1: New; 2: Sleeping; 3: Active; 4: Closed",
-        contract_status_code: "Trạng thái hoàn thiện hồ sơ (0-3)",
-        vsd_status_code: "Trạng thái đăng ký với VSD (-1: Offline, 0: Chưa gửi, 1: Đã gửi, v.v.)",
-        source_channel_code: "Kênh mở tài khoản (Vgaia, Online, IPAY, v.v.)",
-
-        // Personal & Contact Info
-        family_name: "Họ và tên đệm của khách hàng",
-        given_name: "Tên của khách hàng",
-        tax_identifier: "Mã số thuế thu nhập cá nhân",
-        mobile_number: "Số điện thoại di động (đã làm sạch N/A)",
-        email_address: "Địa chỉ Email khách hàng",
-        id_number: "Số giấy tờ định danh (Số CMND/CCCD/Hộ chiếu)",
-        id_issue_location: "Nơi cấp giấy tờ định danh",
-        country_code: "Mã quốc gia cư trú",
-        branch_code: "Mã đơn vị/chi nhánh thực hiện giao dịch",
-        
-        // Relationship Metadata
-        broker_code: "Mã nhân viên chăm sóc tài khoản",
-        introducer_code: "Mã nhân viên giới thiệu khách hàng",
-        department_code: "Mã phòng kinh doanh quản lý",
-        commission_group_code: "Nhóm tính hoa hồng (Theo logic kinh doanh)",
-
-        // Important Dates
-        birth_date: "Ngày sinh khách hàng (Đã loại bỏ ngày mặc định 19000101)",
-        id_issue_date: "Ngày cấp giấy tờ định danh",
-        id_expire_date: "Ngày hết hạn giấy tờ định danh",
-        account_activation_date: "Ngày kích hoạt lại tài khoản",
-        status_updated_date: "Ngày cập nhật trạng thái tài khoản gần nhất",
-        account_opened_date: "Ngày khách hàng mở tài khoản chính thức",
-        contract_completed_date: "Ngày hoàn thiện hồ sơ hợp đồng",
-
-        // Representative Info
-        representative_name: "Họ và tên người đại diện pháp luật",
-        representative_birth_date: "Ngày sinh người đại diện",
-        representative_position: "Chức vụ người đại diện",
-        representative_country_code: "Quốc tịch người đại diện",
-        representative_id_type_code: "Loại giấy tờ định danh người đại diện",
-        representative_id_number: "Số giấy tờ định danh người đại diện",
-        representative_id_issue_date: "Ngày cấp giấy tờ người đại diện",
-        representative_id_expire_date: "Ngày hết hạn giấy tờ người đại diện",
-        representative_phone: "Số điện thoại người đại diện",
-        representative_email: "Email người đại diện",
-
-        // Technical Metadata
-        vsd_sid: "Mã định danh duy nhất tại VSD (SID)",
-        vsd_pcod: "Mã nhà đầu tư tại VSD (Investor Code)",
-        rejection_reason: "Lý do từ chối hồ sơ (nếu có)",
-        remarks: "Ghi chú đặc điểm khách hàng",
-        created_at: "Thời điểm ghi nhận bản ghi lần đầu",
-        created_by: "User tạo bản ghi",
-        updated_at: "Thời điểm cập nhật bản ghi gần nhất",
-        updated_by: "User cập nhật bản ghi",
-        snapshot_date: "Ngày trích xuất dữ liệu từ nguồn (Partition Key)",
-        ingested_at: "Thời điểm dữ liệu được đưa vào Data Warehouse"
+        is_latest: "Dòng dữ liệu có phải là mới nhất tính theo cust_no hay không",
+        cust_cd: "Một khách hàng cust_no có thể có nhiều cust_cd",
+        is_deleted: "Dữ liệu đã xóa hay chưa",
+        cust_no: "Số tài khoản lưu ký, giao dịch",
+        transaction_cd: "Đơn vị giao dịch",
+        cust_family_name: "Họ khách hàng",
+        cust_given_name: "Tên khách hàng",
+        tax_code: "Mã số Thuế TNCN",
+        cust_type: "1: Cá nhân; 2: Tổ chức",
+        foreign_type: "1: Trong nước; 2: Nước ngoài",
+        birthday: "Ngày sinh",
+        sex: "1: Nam; 2: Nữ",
+        mobile_no: "Số điện thoại di động",
+        email_adrs: "Địa chỉ Email",
+        email_flg: "0:NO; 1:YES",
+        approval_cd: "Loại giấy tờ định danh (1-CMND, 2-Passport, 8-CCCD, ...)",
+        id_number: "Số ĐKSH (Số CMND/CCCD/Passport)",
+        issue_location: "Nơi cấp giấy tờ",
+        issue_date: "Ngày cấp (YYYYMMDD)",
+        expire_date: "Ngày hết hạn (YYYYMMDD)",
+        country_cd: "Mã quốc gia",
+        job: "Mã nghề nghiệp",
+        broker_cd: "Nhân viên chăm sóc",
+        introducer_cd: "Nhân viên giới thiệu",
+        department_cd: "Mã phòng kinh doanh",
+        com3_cust_type: "Nhóm hoa hồng",
+        pres_name: "Họ và tên người đại diện",
+        pres_birthday: "Ngày sinh của người đại diện",
+        pres_position: "Chức vụ người đại diện",
+        pres_country_cd: "Quốc tịch người đại diện",
+        pres_approval_cd: "Loại chứng thư người đại diện",
+        pres_id_number: "Số CMND người đại diện",
+        pres_issue_location: "Nơi cấp (Người đại diện)",
+        pres_issue_date: "Ngày cấp người đại diện (YYYYMMDD)",
+        pres_expire_date: "Ngày hết hạn người đại diện (YYYYMMDD)",
+        pres_tel_no: "Số điện thoại người đại diện",
+        pres_email_adrs: "Email người đại diện",
+        channel_id: "Kênh tiếp cận",
+        number_of_sig: "Số lượng chữ ký",
+        acco_divide: "Phân loại tài khoản (1: Thông thường, 2: Tự doanh, 3: Không lưu ký)",
+        acco_sts: "Trạng thái tài khoản (1: New, 2: Sleeping, 3: Active, 4: Closed)",
+        acco_act_date: "Ngày kích hoạt lại",
+        acco_sts_date: "Ngày chuyển trạng thái",
+        acco_str_date: "Ngày mở tài khoản",
+        contract_complete_date: "Ngày hoàn thiện hồ sơ",
+        contract_no: "Số hợp đồng",
+        order_money_conf: "Có kiểm tra tiền không (0:NO, 1:YES)",
+        order_stock_conf: "Có kiểm tra chứng khoán không (0:NO, 1:YES)",
+        not_collect_tax: "Có thu thuế (0: Có thu, 1: Không thu)",
+        contract_status: "Trạng thái hoàn thiện hồ sơ",
+        vsd_status: "Trạng thái gửi lên VSD",
+        reason_reject: "Lý do từ chối",
+        src_channel: "Kênh mở tài khoản",
+        remarks: "Ghi chú đặc điểm của khách hàng",
+        reg_date_time: "Thời gian đăng ký",
+        reg_user_id: "Người đăng ký",
+        upd_date_time: "Thời gian cập nhật",
+        upd_user_id: "Người cập nhật",
+        insert_date: "Ngày snapshot dữ liệu",
+        insert_time: "Thời điểm snapshot dữ liệu",
+        sid: "Mã SID định danh VSD",
+        pcod: "Mã NĐT VSD"
     }
 }
 
@@ -86,81 +76,93 @@ pre_operations {
     SELECT 
       ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `MAX(InsertDate) FROM ${ref("DWH_Curated", "CORTCUSTOMER")}`
+        : `MAX(InsertDate) FROM ${ref("bronze", "CORTCUSTOMER")}`
       }
   );
 }
 
+WITH base_data AS (
+  SELECT
+    -- Identifier 
+    CAST(CUST_CD AS INT64) AS cust_cd,
+    ${func.clean_null_string("CUST_NO")} AS cust_no,
+
+    -- Codes
+    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+    CAST(CUST_TYPE AS INT64) AS cust_type,
+    CAST(FOREIGN_TYPE AS INT64) AS foreign_type,
+    CAST(SEX AS INT64) AS sex,
+    CAST(EMAIL_FLG AS INT64) AS email_flg,
+    CAST(APPROVAL_CD AS INT64) AS approval_cd,
+    CAST(JOB AS INT64) AS job,
+    CAST(CHANNEL_ID AS INT64) AS channel_id,
+    CAST(NUMBER_OF_SIG AS INT64) AS number_of_sig,
+    CAST(ACCO_DIVIDE AS INT64) AS acco_divide,
+    CAST(ACCO_STS AS INT64) AS acco_sts,
+    CAST(ORDER_MONEY_CONF AS INT64) AS order_money_conf,
+    CAST(ORDER_STOCK_CONF AS INT64) AS order_stock_conf,
+    CAST(NOT_COLLECT_TAX AS INT64) AS not_collect_tax,
+    CAST(CONTRACT_STATUS AS INT64) AS contract_status,
+    CAST(VSD_STATUS AS INT64) AS vsd_status,
+    CAST(SRC_CHANNEL AS INT64) AS src_channel,
+    CAST(PRES_APPROVAL_CD AS INT64) AS pres_approval_cd,
+
+    -- String cleaning
+    ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
+    ${func.clean_null_string("CUST_FAMILY_NAME")} AS cust_family_name,
+    ${func.clean_null_string("CUST_GIVEN_NAME")} AS cust_given_name,
+    ${func.clean_null_string("TAX_CODE")} AS tax_code,
+    ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
+    ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
+    ${func.clean_null_string("ID_NUMBER")} AS id_number,
+    ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
+    ${func.clean_null_string("COUNTRY_CD")} AS country_cd,
+    ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+    ${func.clean_null_string("INTRODUCER_CD")} AS introducer_cd,
+    ${func.clean_null_string("DEPARTMENT_CD")} AS department_cd,
+    ${func.clean_null_string("COM3_CUST_TYPE")} AS com3_cust_type,
+    ${func.clean_null_string("PRES_NAME")} AS pres_name,
+    ${func.clean_null_string("PRES_POSITION")} AS pres_position,
+    ${func.clean_null_string("PRES_COUNTRY_CD")} AS pres_country_cd,
+    ${func.clean_null_string("PRES_ID_NUMBER")} AS pres_id_number,
+    ${func.clean_null_string("PRES_ISSUE_LOCATION")} AS pres_issue_location,
+    ${func.clean_null_string("PRES_TEL_NO")} AS pres_tel_no,
+    ${func.clean_null_string("PRES_EMAIL_ADRS")} AS pres_email_adrs,
+    ${func.clean_null_string("CONTRACT_NO")} AS contract_no,
+    ${func.clean_null_string("REASON_REJECT")} AS reason_reject,
+    ${func.clean_null_string("REMARKS")} AS remarks,
+    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+    ${func.clean_null_string("SID")} AS sid,
+    ${func.clean_null_string("PCOD")} AS pcod,
+
+    -- Date Parsing
+    ${func.parse_date("BIRTHDAY")} AS birthday,
+    ${func.parse_date("ISSUE_DATE")} AS issue_date,
+    ${func.parse_date("EXPIRE_DATE")} AS expire_date,
+    ${func.parse_date("PRES_BIRTHDAY")} AS pres_birthday,
+    ${func.parse_date("PRES_ISSUE_DATE")} AS pres_issue_date,
+    ${func.parse_date("PRES_EXPIRE_DATE")} AS pres_expire_date,
+    ${func.parse_date("ACCO_ACT_DATE")} AS acco_act_date,
+    ${func.parse_date("ACCO_STS_DATE")} AS acco_sts_date,
+    ${func.parse_date("ACCO_STR_DATE")} AS acco_str_date,
+    ${func.parse_date("CONTRACT_COMPLETE_DATE")} AS contract_complete_date,
+
+    -- Timestamps and Raw Dates
+    REG_DATE_TIME AS reg_date_time,
+    UPD_DATE_TIME AS upd_date_time,
+    InsertDate AS insert_date,
+    InsertTime AS insert_time,
+
+    -- Window Function for deduplication
+    ROW_NUMBER() OVER (PARTITION BY CUST_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
+    ROW_NUMBER() OVER(PARTITION BY CUST_NO ORDER BY CUST_CD DESC, InsertTime DESC, UPD_DATE_TIME DESC) = 1 as is_latest,
+  FROM ${ref("bronze", "CORTCUSTOMER")}
+  WHERE InsertDate = target_date
+)
+
 SELECT
-  -- Primary & Natural Keys
-  CAST(CUST_CD AS INT64) AS customer_key,
-  CUST_NO AS customer_alternate_id,
-
-  -- Flags (Standardized boolean naming)
-  DEL_CD = 9 AS is_deleted,
-  ORDER_MONEY_CONF = 1 AS is_money_confirmed,
-  ORDER_STOCK_CONF = 1 AS is_stock_confirmed,
-  NOT_COLLECT_TAX = 0 AS is_taxable,
-  CAST(EMAIL_FLG AS INT64) AS has_email_flag,
-
-  -- Classification Codes (Suffix _code)
-  CAST(CUST_TYPE AS INT64) AS legal_entity_type_code,
-  CAST(FOREIGN_TYPE AS INT64) AS residency_type_code,
-  CAST(SEX AS INT64) AS gender_code,
-  CAST(APPROVAL_CD AS INT64) AS id_type_code,
-  CAST(JOB AS INT64) AS occupation_code,
-  CAST(CHANNEL_ID AS INT64) AS acquisition_channel_code,
-  CAST(ACCO_STS AS INT64) AS account_status_code,
-  CAST(CONTRACT_STATUS AS INT64) AS contract_status_code,
-  CAST(VSD_STATUS AS INT64) AS vsd_status_code,
-  CAST(SRC_CHANNEL AS INT64) AS source_channel_code,
-
-  -- Attributes (Semantic Naming)
-  TRANSACTION_CD AS branch_code,
-  ${func.clean_null_string("CUST_FAMILY_NAME")} AS family_name,
-  ${func.clean_null_string("CUST_GIVEN_NAME")} AS given_name,
-  ${func.clean_null_string("TAX_CODE")} AS tax_identifier,
-  ${func.clean_null_string("MOBILE_NO")} AS mobile_number,
-  ${func.clean_null_string("EMAIL_ADRS")} AS email_address,
-  ${func.clean_null_string("ID_NUMBER")} AS id_number,
-  ${func.clean_null_string("ISSUE_LOCATION")} AS id_issue_location,
-  COUNTRY_CD AS country_code,
-  BROKER_CD AS broker_code,
-  INTRODUCER_CD AS introducer_code,
-  DEPARTMENT_CD AS department_code,
-  COM3_CUST_TYPE AS commission_group_code,
   
-  -- Dates (Suffix _date)
-  ${func.parse_date("BIRTHDAY")} AS birth_date,
-  ${func.parse_date("ISSUE_DATE")} AS id_issue_date,
-  ${func.parse_date("EXPIRE_DATE")} AS id_expire_date,
-  ${func.parse_date("ACCO_ACT_DATE")} AS account_activation_date,
-  ${func.parse_date("ACCO_STS_DATE")} AS status_updated_date,
-  ${func.parse_date("ACCO_STR_DATE")} AS account_opened_date,
-  ${func.parse_date("CONTRACT_COMPLETE_DATE")} AS contract_completed_date,
-
-  -- Representative Info (Contextual Prefix)
-  ${func.clean_null_string("PRES_NAME")} AS representative_name,
-  ${func.parse_date("PRES_BIRTHDAY")} AS representative_birth_date,
-  ${func.clean_null_string("PRES_POSITION")} AS representative_position,
-  PRES_COUNTRY_CD AS representative_country_code,
-  CAST(PRES_APPROVAL_CD AS INT64) AS representative_id_type_code,
-  ${func.clean_null_string("PRES_ID_NUMBER")} AS representative_id_number,
-  ${func.parse_date("PRES_ISSUE_DATE")} AS representative_id_issue_date,
-  ${func.parse_date("PRES_EXPIRE_DATE")} AS representative_id_expire_date,
-  ${func.clean_null_string("PRES_TEL_NO")} AS representative_phone,
-  ${func.clean_null_string("PRES_EMAIL_ADRS")} AS representative_email,
-
-  -- Technical & Metadata
-  SID AS vsd_sid,
-  PCOD AS vsd_pcod,
-  ${func.clean_null_string("REASON_REJECT")} AS rejection_reason,
-  ${func.clean_null_string("REMARKS")} AS remarks,
-  REG_DATE_TIME AS created_at,
-  REG_USER_ID AS created_by,
-  UPD_DATE_TIME AS updated_at,
-  UPD_USER_ID AS updated_by,
-  InsertDate AS snapshot_date,
-  InsertTime AS ingested_at
-FROM ${ref("DWH_Curated", "CORTCUSTOMER")}
-WHERE InsertDate = target_date
+  * EXCEPT(row_num)
+FROM base_data
+WHERE row_num = 1

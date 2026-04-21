@@ -1,0 +1,122 @@
+config {
+    type: "table",
+    schema: "silver",
+    name: "stage_cortsub_account",
+    description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
+    tags: ["silver", "subaccount", "daily"],
+    columns: {
+        is_latest: "Dòng dữ liệu có phải là mới nhất tính theo sub_acco_no hay không",
+        // Keys & Identifiers
+        sub_acco_cd: "Tự động tăng toàn bảng (Dùng để deduplicate)",
+        is_deleted: "Dữ liệu đã xóa hay chưa",
+        cust_cd: "Mã định danh khách hàng chủ sở hữu",
+
+        // Classification & Types
+        acco_type: "1-CASH (01-->09); 2-MARGIN (10-->19); 3-BANKING (20-->29); 4-SHORTSALE (30-->39); 5-TK QUỸ MỞ (40-->49); 6-DERIVATIVES (50-->59); 7-ORTHER (60 --> 69); 9-ALGOS (90 --> 99)",
+        algos_type: "Loại tiểu khoản Algos (CopyTrade, Chiến thuật)",
+        type_flg: "Mô hình tiểu khoản (TK thường, TK tổng OMS, Leader/Copier...)",
+        curr_cd: "Mã loại tiền tệ",
+        sub_acco_no: "Số hiệu tiểu khoản (Ví dụ: 014C123456.XY)",
+
+        // Banking Details
+        bank_cd: "Mã ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3, 6)",
+        bank_branch_cd: "Mã chi nhánh ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3, 6)",
+        bank_acco_number: "Số tài khoản ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3, 6)",
+        bank_acco_name: "Tên chủ tài khoản ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3)",
+        bank_acco_id_no: "Số giấy tờ định danh chủ tài khoản ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3)",
+        bank_flg: "Cờ phong tỏa/đồng bộ số dư ngân hàng (Mặc định: 1)",
+
+        // Flags & Logic
+        not_update_by_cust: "Cờ chặn khách hàng cập nhật thông tin tiểu khoản",
+        contract_no: "Số hợp đồng liên kết",
+        source_channel: "Kênh tạo dữ liệu (1: Back Office; 2: Front Office; 3: Floor Trading)",
+        broker_cd: "Mã nhân viên môi giới quản lý",
+        acco_sts: "Trạng thái tài khoản (1-Open, 2-Close)",
+        acco_flg: "Cờ tài khoản mặc định (0: Không mặc định, 1: Mặc định)",
+        trade_acco_no: "Mã số tài khoản giao dịch (Chỉ áp dụng cho loại ACCO_TYPE = 6)",
+        status: "Trạng thái phê duyệt (0-Pending, 1-Approved)",
+
+        // Sourcing
+        source_cd: "Nguồn tiểu khoản (CASH, LOCAL, BANK_CD, SHORTSALE, DERIVATIVES...)",
+        source_sname: "Tên chi tiết nguồn tiểu khoản",
+
+        // Dates & Auditing
+        open_date: "Ngày mở tiểu khoản",
+        close_date: "Ngày đóng tiểu khoản",
+        reopen_date: "Ngày mở lại tiểu khoản đã đóng",
+        remarks: "Ghi chú bổ sung",
+        reg_date_time: "Thời điểm đăng ký bản ghi",
+        reg_user_id: "Người tạo bản ghi",
+        upd_date_time: "Thời điểm cập nhật bản ghi",
+        upd_user_id: "Người cập nhật bản ghi",
+        insert_date: "Ngày snapshot dữ liệu",
+        insert_time: "Thời điểm snapshot dữ liệu"
+    }
+}
+
+pre_operations {
+  DECLARE target_date DATE;
+  SET target_date = (
+    SELECT 
+      ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `MAX(InsertDate) FROM ${ref("bronze", "CORTSUB_ACCOUNT")}`
+      }
+  );
+}
+
+WITH base_data AS (
+  SELECT
+    -- Identifiers and Numeric Statuses
+    CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
+    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+    CAST(CUST_CD AS INT64) AS cust_cd,
+    CAST(ALGOS_TYPE AS INT64) AS algos_type,
+    CAST(ACCO_TYPE AS INT64) AS acco_type,
+    CAST(TYPE_FLG AS INT64) AS type_flg,
+    CAST(NOT_UPDATE_BY_CUST AS INT64) AS not_update_by_cust,
+    CAST(BANK_FLG AS INT64) AS bank_flg,
+    CAST(SOURCE_CHANNEL AS INT64) AS source_channel,
+    CAST(ACCO_STS AS INT64) AS acco_sts,
+    CAST(ACCO_FLG AS INT64) AS acco_flg,
+    CAST(STATUS AS INT64) AS status,
+
+    -- String Cleaning logic using the func helper
+    ${func.clean_null_string("CURR_CD")} AS curr_cd,
+    ${func.clean_null_string("SUB_ACCO_NO")} AS sub_acco_no,
+    ${func.clean_null_string("BANK_CD")} AS bank_cd,
+    ${func.clean_null_string("BANK_BRANCH_CD")} AS bank_branch_cd,
+    ${func.clean_null_string("BANK_ACCO_NUMBER")} AS bank_acco_number,
+    ${func.clean_null_string("BANK_ACCO_NAME")} AS bank_acco_name,
+    ${func.clean_null_string("BANK_ACCO_ID_NO")} AS bank_acco_id_no,
+    ${func.clean_null_string("CONTRACT_NO")} AS contract_no,
+    ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+    ${func.clean_null_string("TRADE_ACCO_NO")} AS trade_acco_no,
+    ${func.clean_null_string("SOURCE_CD")} AS source_cd,
+    ${func.clean_null_string("SOURCE_SNAME")} AS source_sname,
+    ${func.clean_null_string("REMARKS")} AS remarks,
+    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+
+    -- Date Parsing logic using the func helper
+    ${func.parse_date("OPEN_DATE")} AS open_date,
+    ${func.parse_date("CLOSE_DATE")} AS close_date,
+    ${func.parse_date("REOPEN_DATE")} AS reopen_date,
+
+    -- Timestamps & Raw Dates
+    REG_DATE_TIME AS reg_date_time,
+    UPD_DATE_TIME AS upd_date_time,
+    InsertDate AS insert_date,
+    InsertTime AS insert_time,
+
+    -- Window Function for deduplication
+    -- Ưu tiên bản ghi mới nhất dựa trên thời gian snapshot và cập nhật
+    ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
+    ROW_NUMBER() OVER(PARTITION BY SUB_ACCO_NO ORDER BY SUB_ACCO_CD DESC, InsertTime DESC) = 1 as is_latest,
+  FROM ${ref("bronze", "CORTSUB_ACCOUNT")}
+  WHERE InsertDate = target_date
+)
+
+SELECT * EXCEPT(row_num)
+FROM base_data
+WHERE row_num = 1

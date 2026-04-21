@@ -1,0 +1,114 @@
+config {
+    type: "table",
+    schema: "silver",
+    name: "stage_cortasset_ext",
+    description: "Bảng Staging lưu trữ các thông tin mở rộng về tài sản theo subaccount từ hệ thống Core (CORTASSET_EXT). Thực hiện làm sạch dữ liệu, parse ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
+    tags: ["silver", "subaccount", "daily"],
+    columns: {
+        is_latest: "Dòng dữ liệu có phải là mới nhất tính theo sub_acco_no hay không",
+        // Identifiers & Dates
+        sub_acco_cd: "Mã định danh tiểu khoản (Dùng để deduplicate)",
+        business_date: "Ngày nghiệp vụ phát sinh dữ liệu",
+        is_deleted: "Dữ liệu đã xóa hay chưa",
+
+        // Cash & Margin Amounts
+        cash_pending_block_amt: "Tiền ghi giảm chờ duyệt (PENDING_AMOUNT) = Tiền 901 (Mặc định: 0)",
+        cash_pending_pay_amt: "Tiền chờ thanh toán (Ví dụ: Bảng kê mua PHT có hiệu lực) (Mặc định: 0)",
+        sec_pending_block_amt: "Tổng Giá trị Chứng khoán phong tỏa chờ duyệt (Mặc định: 0)",
+        sec_mrg_pending_block_amt: "Tổng Giá trị Chứng khoán Margin phong tỏa chờ duyệt (Mặc định: 0)",
+        advance_avail: "Tiền có thể ƯT chưa xét đăng ký dịch vụ (Tiền bán * Tỷ lệ ƯTTĐ) (Mặc định: 0)",
+        require_bought_unpost_amt: "Giá trị chứng khoán mua bằng tiền mặt chưa Thanh Toán (Mặc định: 0)",
+        mortgage_avail_auto: "Tiền có thể Cầm cố tự động (Đồng bộ khi có lệnh khớp mua) (Mặc định: 0)",
+        
+        // Auto Services Flags
+        is_auto_advance: "Cờ đăng ký dịch vụ Ứng trước tự động (0: No, 1: Yes)",
+        is_auto_mortgage: "Cờ đăng ký dịch vụ Cầm cố tự động (0: No, 1: Yes)",
+
+        // Margin Rates
+        retention_rate: "Tỷ lệ duy trì tài khoản",
+        tn_rate: "Tỷ lệ T+n (Ký quỹ)",
+        margin_rate: "Tỷ lệ Margin hiện tại",
+        warning_rate: "Tỷ lệ cảnh báo vi phạm",
+        call_rate: "Tỷ lệ gọi bổ sung ký quỹ (Margin Call)",
+        withdraw_rate: "Tỷ lệ có thể rút tiền",
+
+        // Limits & Brokers
+        margin_limit_grp: "Hạn mức Margin theo nhóm khách hàng",
+        margin_limit: "Tổng hạn mức Hợp đồng Margin (Mặc định: 0)",
+        margin_broker_cd: "Mã nhân viên môi giới quản lý Margin",
+
+        // Technical Metadata
+        reg_date_time: "Thời điểm đăng ký bản ghi",
+        reg_user_id: "Người tạo bản ghi",
+        upd_date_time: "Thời điểm cập nhật bản ghi",
+        upd_user_id: "Người cập nhật bản ghi",
+        insert_date: "Ngày snapshot dữ liệu",
+        insert_time: "Thời điểm snapshot dữ liệu"
+    }
+}
+
+pre_operations {
+  DECLARE target_date DATE;
+  SET target_date = (
+    SELECT 
+      ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `MAX(BUSINESS_DATE) FROM ${ref("bronze", "CORTASSET_EXT")}`
+      }
+  );
+}
+
+WITH base_data AS (
+  SELECT
+    -- Primary Keys & Dates
+    CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
+    ${func.parse_date("BUSINESS_DATE")} AS business_date,
+    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+
+    -- Cash and Security Pending Amounts (Numeric 18,4)
+    CAST(CASH_PENDING_BLOCK_AMT AS NUMERIC) AS cash_pending_block_amt,
+    CAST(CASH_PENDING_PAY_AMT AS NUMERIC) AS cash_pending_pay_amt,
+    CAST(SEC_PENDING_BLOCK_AMT AS NUMERIC) AS sec_pending_block_amt,
+    CAST(SEC_MRG_PENDING_BLOCK_AMT AS NUMERIC) AS sec_mrg_pending_block_amt,
+    CAST(ADVANCE_AVAIL AS NUMERIC) AS advance_avail,
+    CAST(REQUIRE_BOUGHT_UNPOST_AMT AS NUMERIC) AS require_bought_unpost_amt,
+    CAST(MORTGAGE_AVAIL_AUTO AS NUMERIC) AS mortgage_avail_auto,
+
+    -- Service Flags
+    CAST(IS_AUTO_ADVANCE AS INT64) AS is_auto_advance,
+    CAST(IS_AUTO_MORTGAGE AS INT64) AS is_auto_mortgage,
+
+    -- Margin Rates (Numeric 7,5 -> Float64)
+    CAST(RETENTION_RATE AS FLOAT64) AS retention_rate,
+    CAST(TN_RATE AS FLOAT64) AS tn_rate,
+    CAST(MARGIN_RATE AS FLOAT64) AS margin_rate,
+    CAST(WARNING_RATE AS FLOAT64) AS warning_rate,
+    CAST(CALL_RATE AS FLOAT64) AS call_rate,
+    CAST(WITHDRAW_RATE AS FLOAT64) AS withdraw_rate,
+
+    -- Margin Limits
+    CAST(MARGIN_LIMIT_GRP AS NUMERIC) AS margin_limit_grp,
+    CAST(MARGIN_LIMIT AS NUMERIC) AS margin_limit,
+
+    -- String cleaning for codes and user IDs
+    ${func.clean_null_string("MARGIN_BROKER_CD")} AS margin_broker_cd,
+    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+
+    -- Technical Timestamps and Dates
+    REG_DATE_TIME AS reg_date_time,
+    UPD_DATE_TIME AS upd_date_time,
+    InsertDate AS insert_date,
+    InsertTime AS insert_time,
+
+    -- Window Function để xác định bản ghi mới nhất
+    ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
+    ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_NO ORDER BY SUB_ACCO_CD DESC, InsertTime DESC, UPD_DATE_TIME DESC) AS is_latest
+
+  FROM ${ref("bronze", "CORTASSET_EXT")}
+  WHERE BUSINESS_DATE = target_date
+)
+
+SELECT * EXCEPT(row_num)
+FROM base_data
+WHERE row_num = 1

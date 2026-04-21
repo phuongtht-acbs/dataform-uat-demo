@@ -1,0 +1,133 @@
+config {
+    type: "table",
+    schema: "silver",
+    name: "stage_brktbroker",
+    description: "Bảng Staging chuẩn hóa thông tin môi giới từ hệ thống Core (BRKTBROKER). Thực hiện làm sạch dữ liệu, parse ngày tháng và loại bỏ trùng lặp theo broker_cd.",
+    tags: ["silver", "broker", "daily"],
+    columns: {
+        // Primary Identifiers
+        broker_cd: "Mã nhân viên môi giới",
+        is_deleted: "Dữ liệu đã xóa hay chưa",
+        parent_broker_cd: "Mã môi giới quản lý cấp trên (Mặc định: null)",
+        
+        // Personal Information
+        family_name: "Họ nhân viên",
+        given_name: "Tên nhân viên",
+        mobile_no: "Số điện thoại di động",
+        email_adrs: "Địa chỉ Email",
+        adrs_1: "Địa chỉ thường trú 1",
+        adrs_2: "Địa chỉ thường trú 2",
+        
+        // Identification
+        approval_cd: "Loại giấy tờ định danh (1: ID Card, 2: Passport, 3: Driving Licence, 4: Business Certificate, 9: Other)",
+        id_number: "Số CMND/CCCD/Hộ chiếu",
+        issue_location: "Nơi cấp giấy tờ định danh",
+        issue_date: "Ngày cấp giấy tờ định danh",
+        expire_date: "Ngày hết hạn giấy tờ định danh",
+        
+        // Account & Employment Details
+        user_id: "Tài khoản người dùng trên hệ thống (UserID)",
+        transaction_cd: "Mã điểm giao dịch",
+        acco_begin_date: "Ngày bắt đầu làm việc",
+        acco_end_date: "Ngày kết thúc làm việc/Ngày hết hạn",
+        employee_type: "Phân loại nhân viên (1: Thử việc, 2: Chính thức, 3: CTV)",
+        ctv_corp_id: "ID mã quản lý tổ chức CTV (Áp dụng cho loại EMPLOYEE_TYPE = 3)",
+        acco_sts: "Trạng thái tài khoản môi giới",
+        
+        // Professional Qualifications
+        exc_begin_date: "Ngày xét kinh nghiệm KPI",
+        cert_begin_date: "Ngày cấp chứng chỉ hành nghề",
+        business_type: "Loại hình kinh doanh (Lưu ID dạng chuỗi: 1, 2)",
+        broker_type_id: "Phân hệ môi giới",
+        
+        // Compensation & Tax
+        depend_number: "Số người phụ thuộc giảm trừ gia cảnh",
+        insurance_salary: "Mức lương đóng bảo hiểm",
+        basic_salary: "Mức lương cơ bản",
+        end_basic_salary_month: "Tháng kết thúc nhận lương cơ bản (YYYYMM)",
+        
+        // Technical Metadata
+        remarks: "Ghi chú bổ sung",
+        reg_date_time: "Thời gian đăng ký hệ thống",
+        reg_user_id: "Mã người dùng đăng ký",
+        upd_date_time: "Thời gian cập nhật hệ thống",
+        upd_user_id: "Mã người dùng cập nhật",
+        insert_date: "Ngày snapshot dữ liệu từ nguồn",
+        insert_time: "Thời điểm snapshot dữ liệu"
+    }
+}
+
+pre_operations {
+  DECLARE target_date DATE;
+  SET target_date = (
+    SELECT 
+      ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `MAX(TRADE_DATE) FROM ${ref("bronze", "BRKTBROKER")}`
+      }
+  );
+}
+
+WITH base_data AS (
+  SELECT
+    -- String cleaning using the global helper
+    ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+
+    -- Numeric Status and ID Codes (Casting to INT64)
+    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+    CAST(APPROVAL_CD AS INT64) AS approval_cd,
+    CAST(EMPLOYEE_TYPE AS INT64) AS employee_type,
+    CAST(CTV_CORP_ID AS INT64) AS ctv_corp_id,
+    CAST(DEPEND_NUMBER AS INT64) AS depend_number,
+    CAST(END_BASIC_SALARY_MONTH AS INT64) AS end_basic_salary_month,
+    CAST(BROKER_TYPE_ID AS INT64) AS broker_type_id,
+    CAST(ACCO_STS AS INT64) AS acco_sts,
+
+    -- Financial Values (Casting to FLOAT64)
+    CAST(INSURANCE_SALARY AS FLOAT64) AS insurance_salary,
+    CAST(BASIC_SALARY AS FLOAT64) AS basic_salary,
+
+    -- Other String fields
+    ${func.clean_null_string("PARENT_BROKER_CD")} AS parent_broker_cd,
+    ${func.clean_null_string("FAMILY_NAME")} AS family_name,
+    ${func.clean_null_string("GIVEN_NAME")} AS given_name,
+    ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
+    ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
+    ${func.clean_null_string("ADRS_1")} AS adrs_1,
+    ${func.clean_null_string("ADRS_2")} AS adrs_2,
+    ${func.clean_null_string("ID_NUMBER")} AS id_number,
+    ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
+    ${func.clean_null_string("USER_ID")} AS user_id,
+    ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
+    ${func.clean_null_string("BUSINESS_TYPE")} AS business_type,
+    ${func.clean_null_string("REMARKS")} AS remarks,
+    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+
+    -- Numeric Date Parsing
+    ${func.parse_date("ISSUE_DATE")} AS issue_date,
+    ${func.parse_date("EXPIRE_DATE")} AS expire_date,
+    ${func.parse_date("ACCO_BEGIN_DATE")} AS acco_begin_date,
+    ${func.parse_date("ACCO_END_DATE")} AS acco_end_date,
+    ${func.parse_date("EXC_BEGIN_DATE")} AS exc_begin_date,
+    ${func.parse_date("CERT_BEGIN_DATE")} AS cert_begin_date,
+
+    -- Date and Metadata
+    REG_DATE_TIME AS reg_date_time,
+    UPD_DATE_TIME AS upd_date_time,
+    InsertDate AS insert_date,
+    InsertTime AS insert_time,
+
+    -- Logic deduplicate: Lấy bản ghi mới nhất dựa trên thời gian snapshot và cập nhật
+    ROW_NUMBER() OVER (
+      PARTITION BY BROKER_CD 
+      ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+    ) AS row_num
+
+  FROM ${ref("bronze", "BRKTBROKER")}
+  WHERE TRADE_DATE = target_date
+)
+
+SELECT * EXCEPT(row_num)
+FROM base_data
+WHERE row_num = 1

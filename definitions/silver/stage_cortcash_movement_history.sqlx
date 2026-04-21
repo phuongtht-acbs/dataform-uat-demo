@@ -1,0 +1,123 @@
+config {
+    type: "table",
+    schema: "silver",
+    name: "stage_cortcash_movement_history",
+    description: "Bảng Staging chuẩn hóa lịch sử giao dịch tiền của khách hàng từ hệ thống Core (CORTCASH_MOVEMENT_HISTORY). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo allo_date và ref_no.",
+    tags: ["silver", "cash", "daily"],
+    columns: {
+        // Keys & Identifiers
+        allo_date: "Ngày xử lý giao dịch (Khóa chính cùng với ref_no)",
+        ref_no: "Số tham chiếu giao dịch (Khóa chính cùng với allo_date)",
+        is_deleted: "Dữ liệu đã xóa hay chưa",
+        cust_cd: "Mã định danh khách hàng",
+        cust_no: "Số tài khoản khách hàng",
+        sub_acco_cd: "Mã định danh tiểu khoản",
+        sub_acco_no: "Số hiệu tiểu khoản",
+
+        // Transaction Details
+        entry_date: "Ngày nhập liệu giao dịch",
+        approvement_id: "ID phê duyệt giao dịch",
+        group_category: "Phân loại nghiệp vụ",
+        task_cd: "Mã tác vụ/giao dịch",
+        src_date: "Ngày phát sinh nguồn",
+        src_no: "Số tham chiếu nguồn",
+        src_transaction_cd: "Đơn vị giao dịch khách hàng",
+        curr_cd: "Mã loại tiền tệ",
+
+        // Amounts
+        begin_amount: "Số dư đầu (Mục đích xử lý report, mặc định 0)",
+        amount: "Số tiền giao dịch (Mặc định 0)",
+        amount_type: "Loại số tiền (D: Debit, C: Credit)",
+        trade_type: "Loại giao dịch (1: Debit, 2: Credit)",
+        after_amount: "Số dư sau giao dịch (Mục đích xử lý report, mặc định 0)",
+
+        // Status & Utility
+        util_cd: "Mã công cụ/tiện ích",
+        util_cash_id: "ID tiền mặt tiện ích (Mặc định 0)",
+        status: "Trạng thái giao dịch (Mặc định 0)",
+        transaction_cd: "Đơn vị giao dịch nơi thực hiện",
+        internal_balance_code: "Mã tài khoản nội bộ",
+        doc: "Chứng từ liên quan",
+
+        // Audit & Comments
+        remarks: "Ghi chú giao dịch",
+        memo: "Diễn giải chi tiết",
+        approved_date_time: "Thời điểm phê duyệt",
+        approved_user_id: "Người phê duyệt",
+        reg_date_time: "Thời điểm đăng ký bản ghi",
+        reg_user_id: "Người tạo bản ghi",
+        upd_date_time: "Thời điểm cập nhật bản ghi",
+        upd_user_id: "Người cập nhật bản ghi",
+    }
+}
+
+pre_operations {
+  DECLARE target_date DATE;
+  SET target_date = (
+    SELECT 
+      ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `MAX(ALLO_DATE) FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")}`
+      }
+  );
+}
+
+WITH base_data AS (
+  SELECT
+    -- Date Parsing using global helper (parse_date) for numeric date fields
+    ${func.parse_date("ALLO_DATE")} AS allo_date,
+    ${func.parse_date("ENTRY_DATE")} AS entry_date,
+    ${func.parse_date("SRC_DATE")} AS src_date,
+
+    -- Identifiers and Numeric Values (Casting to INT64 or NUMERIC)
+    CAST(REF_NO AS INT64) AS ref_no,
+    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+    CAST(CUST_CD AS INT64) AS cust_cd,
+    CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
+    CAST(APPROVEMENT_ID AS INT64) AS approvement_id,
+    CAST(SRC_NO AS INT64) AS src_no,
+    CAST(TRADE_TYPE AS INT64) AS trade_type,
+    CAST(UTIL_CASH_ID AS INT64) AS util_cash_id,
+    CAST(STATUS AS INT64) AS status,
+
+    -- Amounts (Numeric precision preserved)
+    CAST(BEGIN_AMOUNT AS NUMERIC) AS begin_amount,
+    CAST(AMOUNT AS NUMERIC) AS amount,
+    CAST(AFTER_AMOUNT AS NUMERIC) AS after_amount,
+
+    -- String Cleaning logic using the global helper
+    ${func.clean_null_string("CUST_NO")} AS cust_no,
+    ${func.clean_null_string("SUB_ACCO_NO")} AS sub_acco_no,
+    ${func.clean_null_string("GROUP_CATEGORY")} AS group_category,
+    ${func.clean_null_string("TASK_CD")} AS task_cd,
+    ${func.clean_null_string("SRC_TRANSACTION_CD")} AS src_transaction_cd,
+    ${func.clean_null_string("CURR_CD")} AS curr_cd,
+    ${func.clean_null_string("AMOUNT_TYPE")} AS amount_type,
+    ${func.clean_null_string("UTIL_CD")} AS util_cd,
+    ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
+    ${func.clean_null_string("REMARKS")} AS remarks,
+    ${func.clean_null_string("MEMO")} AS memo,
+    ${func.clean_null_string("INTERNAL_BALANCE_CODE")} AS internal_balance_code,
+    ${func.clean_null_string("DOC")} AS doc,
+    ${func.clean_null_string("APPROVED_USER_ID")} AS approved_user_id,
+    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+
+    -- Timestamps and Technical dates
+    APPROVED_DATE_TIME AS approved_date_time,
+    REG_DATE_TIME AS reg_date_time,
+    UPD_DATE_TIME AS upd_date_time,
+
+    -- Logic deduplicate: Partition theo tổ hợp khóa chính và lấy bản ghi cập nhật sau cùng
+    ROW_NUMBER() OVER (
+      PARTITION BY ALLO_DATE, REF_NO 
+      ORDER BY UPD_DATE_TIME DESC
+    ) AS row_num
+
+  FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")}
+  WHERE ALLO_DATE = target_date
+)
+
+SELECT * EXCEPT(row_num)
+FROM base_data
+WHERE row_num = 1
