@@ -1,0 +1,103 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "dim_broker",
+    description: "Bảng Dimension SCD Type 2 cho nhân viên môi giới. Quản lý lịch sử thông tin và trạng thái làm việc.",
+    tags: ["silver", "dimension", "daily", "broker"],
+    uniqueKey: ["dim_broker_key"],
+    bigquery: {
+        partitionBy: "DATE(valid_from)"
+    }
+}
+
+pre_operations {
+  -- Xác định target_date: Ưu tiên biến vars, nếu không có sẽ lấy MAX insert_date từ staging
+  DECLARE target_date DATE;
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(insert_date) FROM ${ref("silver", "stage_brktbroker")})`
+    }
+  );
+}
+
+-- 1. Lấy dữ liệu từ Staging (Bỏ qua deduplication theo yêu cầu)
+WITH staging_data AS (
+    SELECT
+        -- Hash để kiểm tra thay đổi nội dung (Không bao gồm Technical Metadata)
+        ${func.generate_hash([
+            "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
+            "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
+            "issue_location", "issue_date", "expire_date", "user_id", "transaction_cd",
+            "acco_begin_date", "acco_end_date", "employee_type", "ctv_corp_id",
+            "acco_sts", "exc_begin_date", "cert_begin_date", "business_type",
+            "broker_type_id", "depend_number", "insurance_salary", "basic_salary",
+            "end_basic_salary_month", "remarks"
+        ])} AS record_hash,
+        broker_cd,
+        is_deleted,
+        parent_broker_cd,
+        family_name,
+        given_name,
+        mobile_no,
+        email_adrs,
+        adrs_1,
+        adrs_2,
+        approval_cd,
+        id_number,
+        issue_location,
+        issue_date,
+        expire_date,
+        user_id,
+        transaction_cd,
+        acco_begin_date,
+        acco_end_date,
+        employee_type,
+        ctv_corp_id,
+        acco_sts,
+        exc_begin_date,
+        cert_begin_date,
+        business_type,
+        broker_type_id,
+        depend_number,
+        insurance_salary,
+        basic_salary,
+        end_basic_salary_month,
+        remarks
+    FROM ${ref("silver", "stage_brktbroker")}
+    WHERE insert_date = target_date
+),
+
+-- 2. Xác định các bản ghi hiện tại trong Dimension
+current_dim AS (
+    SELECT
+        broker_cd,
+        record_hash
+    FROM ${self()}
+    WHERE is_current
+)
+
+-- 3. Insert bản ghi mới hoặc bản ghi có thay đổi thông tin
+SELECT
+    ${func.generate_hash(["stg.broker_cd", "CAST(target_date AS TIMESTAMP)"])} AS dim_broker_key,
+    CAST(target_date AS TIMESTAMP) AS valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
+    true AS is_current,
+    stg.*
+FROM staging_data AS stg
+LEFT JOIN current_dim AS cur ON stg.broker_cd = cur.broker_cd
+WHERE 
+    cur.broker_cd IS NULL 
+    OR stg.record_hash != cur.record_hash
+;
+
+-- 4. Đóng phiên bản cũ khi có dữ liệu mới/thay đổi
+post_operations {
+  MERGE ${self()} AS t
+  USING staging_data AS s
+  ON t.broker_cd = s.broker_cd AND t.is_current AND t.record_hash != s.record_hash
+  WHEN MATCHED THEN
+    UPDATE SET 
+      t.valid_to = CAST(target_date AS TIMESTAMP),
+      t.is_current = false;
+}
