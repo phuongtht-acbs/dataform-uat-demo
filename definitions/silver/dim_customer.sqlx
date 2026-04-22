@@ -2,7 +2,7 @@ config {
     type: "incremental",
     schema: "silver",
     name: "dim_customer",
-    description: "Bảng Dimension SCD Type 2 cho khách hàng. Quản lý lịch sử thay đổi thông tin khách hàng.",
+    description: "Bảng Dimension SCD Type 2 cho khách hàng. Quản lý lịch sử thay đổi thông tin khách hàng và bảo toàn vết audit.",
     tags: ["silver", "dimension", "daily", "customer"],
     uniqueKey: ["dim_customer_key"],
     bigquery: {
@@ -11,7 +11,7 @@ config {
 }
 
 pre_operations {
-  -- 1. Xác định thời gian chạy
+  -- 1. Xác định thời gian chạy đồng nhất
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   -- 2. Xác định target_date
   DECLARE target_date DATE;
@@ -26,7 +26,7 @@ pre_operations {
 -- 1. Lấy dữ liệu từ Staging và xử lý trùng lặp
 WITH staging_data AS (
     SELECT
-        -- Hash để kiểm tra thay đổi nội dung
+        -- Hash để kiểm tra thay đổi nội dung (Fingerprint)
         ${func.generate_hash([
             "cust_cd", "is_deleted", "transaction_cd", "cust_family_name", "cust_given_name",
             "tax_code", "cust_type", "foreign_type", "birthday", "sex", "mobile_no",
@@ -38,81 +38,30 @@ WITH staging_data AS (
             "channel_id", "number_of_sig", "acco_divide", "acco_sts", "acco_act_date",
             "acco_sts_date", "acco_str_date", "contract_complete_date", "contract_no",
             "order_money_conf", "order_stock_conf", "not_collect_tax", "contract_status",
-            "vsd_status", "reason_reject", "src_channe", "remarks", "sid", "pcod"
+            "vsd_status", "reason_reject", "src_channel", "remarks", "sid", "pcod"
         ])} AS record_hash,
-        cust_no,
-        cust_cd,
-        is_deleted,
-        transaction_cd,
-        cust_family_name,
-        cust_given_name,
-        tax_code,
-        cust_type,
-        foreign_type,
-        birthday,
-        sex,
-        mobile_no,
-        email_adrs,
-        email_flg,
-        approval_cd,
-        id_number,
-        issue_location,
-        issue_date,
-        expire_date,
-        country_cd,
-        job,
-        broker_cd,
-        introducer_cd,
-        department_cd,
-        com3_cust_type,
-        pres_name,
-        pres_birthday,
-        pres_position,
-        pres_country_cd,
-        pres_approval_cd,
-        pres_id_number,
-        pres_issue_location,
-        pres_issue_date,
-        pres_expire_date,
-        pres_tel_no,
-        pres_email_adrs,
-        channel_id,
-        number_of_sig,
-        acco_divide,
-        acco_sts,
-        acco_act_date,
-        acco_sts_date,
-        acco_str_date,
-        contract_complete_date,
-        contract_no,
-        order_money_conf,
-        order_stock_conf,
-        not_collect_tax,
-        contract_status,
-        vsd_status,
-        reason_reject,
-        src_channe,
-        remarks,
-        sid,
-        pcod
+        *
     FROM ${ref("silver", "stage_cortcustomer")}
     WHERE insert_date = target_date
     -- Loại bỏ trùng lặp trên cust_no trong cùng 1 batch
     QUALIFY ROW_NUMBER() OVER (PARTITION BY cust_no ORDER BY cust_cd DESC) = 1
 ),
 
--- 2. Xác định các bản ghi hiện tại trong Dimension
+-- 2. Xác định các bản ghi hiện tại trong Dimension (Xử lý First-run)
 current_dim AS (
     SELECT
-        cust_no,
-        record_hash
-    FROM ${self()}
+        cust_no, record_hash, dim_customer_key, _ingested_at
+    FROM
+        ${incremental() 
+            ? self() 
+            : `(SELECT TRUE AS is_current, CAST(NULL AS STRING) AS cust_no, CAST(NULL AS BYTES) AS record_hash, CAST(NULL AS BYTES) AS dim_customer_key, CAST(NULL AS TIMESTAMP) AS _ingested_at FROM (SELECT 1) WHERE 1=0)`
+        }
     WHERE is_current
 )
 
 -- 3. Insert bản ghi mới (New) hoặc bản ghi thay đổi (Updated)
 SELECT
-    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     ${func.generate_hash(["stg.cust_no", "CAST(target_date AS TIMESTAMP)"])} AS dim_customer_key,
     CAST(target_date AS TIMESTAMP) AS valid_from,
@@ -123,10 +72,27 @@ FROM staging_data AS stg
 LEFT JOIN current_dim AS cur ON stg.cust_no = cur.cust_no
 WHERE cur.cust_no IS NULL OR stg.record_hash != cur.record_hash
 
-
-post_operations { -- 4. Đóng record cũ khi có phiên bản mới
+post_operations {-- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
-  USING staging_data AS s
+  USING (
+    SELECT
+        cust_no,
+        ${func.generate_hash([
+            "cust_cd", "is_deleted", "transaction_cd", "cust_family_name", "cust_given_name",
+            "tax_code", "cust_type", "foreign_type", "birthday", "sex", "mobile_no",
+            "email_adrs", "email_flg", "approval_cd", "id_number", "issue_location",
+            "issue_date", "expire_date", "country_cd", "job", "broker_cd", "introducer_cd",
+            "department_cd", "com3_cust_type", "pres_name", "pres_birthday", "pres_position",
+            "pres_country_cd", "pres_approval_cd", "pres_id_number", "pres_issue_location",
+            "pres_issue_date", "pres_expire_date", "pres_tel_no", "pres_email_adrs",
+            "channel_id", "number_of_sig", "acco_divide", "acco_sts", "acco_act_date",
+            "acco_sts_date", "acco_str_date", "contract_complete_date", "contract_no",
+            "order_money_conf", "order_stock_conf", "not_collect_tax", "contract_status",
+            "vsd_status", "reason_reject", "src_channel", "remarks", "sid", "pcod"
+        ])} AS record_hash
+    FROM ${ref("silver", "stage_cortcustomer")}
+    WHERE insert_date = target_date
+  ) AS s
   ON t.cust_no = s.cust_no AND t.is_current AND t.record_hash != s.record_hash
   WHEN MATCHED THEN
     UPDATE SET

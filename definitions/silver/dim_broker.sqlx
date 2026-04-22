@@ -26,7 +26,7 @@ pre_operations {
 -- 1. Lấy dữ liệu từ Staging (Bỏ qua deduplication theo yêu cầu)
 WITH staging_data AS (
     SELECT
-        -- Hash để kiểm tra thay đổi nội dung (Không bao gồm Technical Metadata)
+        -- Hash để kiểm tra thay đổi nội dung
         ${func.generate_hash([
             "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
             "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
@@ -73,15 +73,18 @@ WITH staging_data AS (
 -- 2. Xác định các bản ghi hiện tại trong Dimension
 current_dim AS (
     SELECT
-        broker_cd,
-        record_hash
-    FROM ${self()}
+        broker_cd, record_hash, dim_broker_key, _ingested_at
+    FROM
+        ${incremental() 
+            ? self() 
+            : `(SELECT TRUE AS is_current, CAST(NULL AS STRING) AS broker_cd, CAST(NULL AS BYTES) AS record_hash, CAST(NULL AS BYTES) AS dim_broker_key, CAST(NULL AS TIMESTAMP) AS _ingested_at FROM (SELECT 1) WHERE 1=0)`
+        }
     WHERE is_current
 )
 
 -- 3. Insert bản ghi mới hoặc bản ghi có thay đổi thông tin
 SELECT
-    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     ${func.generate_hash(["stg.broker_cd", "CAST(target_date AS TIMESTAMP)"])} AS dim_broker_key,
     CAST(target_date AS TIMESTAMP) AS valid_from,
@@ -96,7 +99,21 @@ WHERE
 
 post_operations { -- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
-  USING staging_data AS s
+  USING (
+    SELECT
+        broker_cd,
+        ${func.generate_hash([
+            "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
+            "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
+            "issue_location", "issue_date", "expire_date", "user_id", "transaction_cd",
+            "acco_begin_date", "acco_end_date", "employee_type", "ctv_corp_id",
+            "acco_sts", "exc_begin_date", "cert_begin_date", "business_type",
+            "broker_type_id", "depend_number", "insurance_salary", "basic_salary",
+            "end_basic_salary_month", "remarks"
+        ])} AS record_hash
+    FROM ${ref("silver", "stage_brktbroker")}
+    WHERE insert_date = target_date
+  ) AS s
   ON t.broker_cd = s.broker_cd AND t.is_current AND t.record_hash != s.record_hash
   WHEN MATCHED THEN
     UPDATE SET
