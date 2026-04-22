@@ -90,7 +90,7 @@ post_operations {-- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
   USING (
     SELECT
-        s.sub_acco_cd,
+        s.sub_acco_no,
         ${func.generate_hash([
             "s.sub_acco_cd", "s.is_deleted", "s.cust_cd", "s.acco_type", "s.algos_type",
             "s.type_flg", "s.curr_cd", "s.bank_cd", "s.bank_branch_cd", "s.bank_acco_number",
