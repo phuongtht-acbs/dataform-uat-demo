@@ -1,10 +1,18 @@
 config {
-    type: "table",
+    type: "incremental",
     schema: "silver",
     name: "stage_brktbroker",
-    description: "Bảng Staging chuẩn hóa thông tin môi giới từ hệ thống Core (BRKTBROKER). Thực hiện làm sạch dữ liệu, parse ngày tháng và loại bỏ trùng lặp theo broker_cd.",
+    description: "Bảng Staging lưu trữ lịch sử snapshot thông tin môi giới. Dữ liệu được chuẩn hóa, parse ngày tháng và bảo toàn vết ingestion.",
     tags: ["silver", "broker", "daily"],
+    uniqueKey: ["broker_cd", "insert_date"],
+    bigquery: {
+        partitionBy: "insert_date",
+    },
     columns: {
+        // Audit luồng Dataform
+        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
+        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
+
         // Primary Identifiers
         broker_cd: "Mã nhân viên môi giới",
         is_deleted: "Dữ liệu đã xóa hay chưa",
@@ -60,74 +68,79 @@ config {
 pre_operations {
   DECLARE target_date DATE;
   SET target_date = (
-    SELECT 
-      ${dataform.projectConfig.vars.target_date 
-        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `MAX(TRADE_DATE) FROM ${ref("bronze", "BRKTBROKER")}`
-      }
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(TRADE_DATE) FROM ${ref("bronze", "BRKTBROKER")})`
+    }
   );
 }
 
-WITH base_data AS (
-  SELECT
-    -- String cleaning using the global helper
-    ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+WITH staging_data AS (
+    SELECT
+        -- 1. Identifiers
+        ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+        CAST(DEL_CD AS INT64) = 9 AS is_deleted,
 
-    -- Numeric Status and ID Codes (Casting to INT64)
-    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
-    CAST(APPROVAL_CD AS INT64) AS approval_cd,
-    CAST(EMPLOYEE_TYPE AS INT64) AS employee_type,
-    CAST(CTV_CORP_ID AS INT64) AS ctv_corp_id,
-    CAST(DEPEND_NUMBER AS INT64) AS depend_number,
-    CAST(END_BASIC_SALARY_MONTH AS INT64) AS end_basic_salary_month,
-    CAST(BROKER_TYPE_ID AS INT64) AS broker_type_id,
-    CAST(ACCO_STS AS INT64) AS acco_sts,
+        -- 2. Numeric Status and ID Codes
+        CAST(APPROVAL_CD AS INT64) AS approval_cd,
+        CAST(EMPLOYEE_TYPE AS INT64) AS employee_type,
+        CAST(CTV_CORP_ID AS INT64) AS ctv_corp_id,
+        CAST(DEPEND_NUMBER AS INT64) AS depend_number,
+        CAST(END_BASIC_SALARY_MONTH AS INT64) AS end_basic_salary_month,
+        CAST(BROKER_TYPE_ID AS INT64) AS broker_type_id,
+        CAST(ACCO_STS AS INT64) AS acco_sts,
 
-    -- Financial Values (Casting to FLOAT64)
-    CAST(INSURANCE_SALARY AS FLOAT64) AS insurance_salary,
-    CAST(BASIC_SALARY AS FLOAT64) AS basic_salary,
+        -- 3. Financial Values
+        CAST(INSURANCE_SALARY AS FLOAT64) AS insurance_salary,
+        CAST(BASIC_SALARY AS FLOAT64) AS basic_salary,
 
-    -- Other String fields
-    ${func.clean_null_string("PARENT_BROKER_CD")} AS parent_broker_cd,
-    ${func.clean_null_string("FAMILY_NAME")} AS family_name,
-    ${func.clean_null_string("GIVEN_NAME")} AS given_name,
-    ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
-    ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
-    ${func.clean_null_string("ADRS_1")} AS adrs_1,
-    ${func.clean_null_string("ADRS_2")} AS adrs_2,
-    ${func.clean_null_string("ID_NUMBER")} AS id_number,
-    ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
-    ${func.clean_null_string("USER_ID")} AS user_id,
-    ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
-    ${func.clean_null_string("BUSINESS_TYPE")} AS business_type,
-    ${func.clean_null_string("REMARKS")} AS remarks,
-    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
-    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+        -- 4. String Cleaning
+        ${func.clean_null_string("PARENT_BROKER_CD")} AS parent_broker_cd,
+        ${func.clean_null_string("FAMILY_NAME")} AS family_name,
+        ${func.clean_null_string("GIVEN_NAME")} AS given_name,
+        ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
+        ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
+        ${func.clean_null_string("ADRS_1")} AS adrs_1,
+        ${func.clean_null_string("ADRS_2")} AS adrs_2,
+        ${func.clean_null_string("ID_NUMBER")} AS id_number,
+        ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
+        ${func.clean_null_string("USER_ID")} AS user_id,
+        ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
+        ${func.clean_null_string("BUSINESS_TYPE")} AS business_type,
+        ${func.clean_null_string("REMARKS")} AS remarks,
 
-    -- Numeric Date Parsing
-    ${func.parse_date("ISSUE_DATE")} AS issue_date,
-    ${func.parse_date("EXPIRE_DATE")} AS expire_date,
-    ${func.parse_date("ACCO_BEGIN_DATE")} AS acco_begin_date,
-    ${func.parse_date("ACCO_END_DATE")} AS acco_end_date,
-    ${func.parse_date("EXC_BEGIN_DATE")} AS exc_begin_date,
-    ${func.parse_date("CERT_BEGIN_DATE")} AS cert_begin_date,
+        -- 5. Date Parsing
+        ${func.parse_date("ISSUE_DATE")} AS issue_date,
+        ${func.parse_date("EXPIRE_DATE")} AS expire_date,
+        ${func.parse_date("ACCO_BEGIN_DATE")} AS acco_begin_date,
+        ${func.parse_date("ACCO_END_DATE")} AS acco_end_date,
+        ${func.parse_date("EXC_BEGIN_DATE")} AS exc_begin_date,
+        ${func.parse_date("CERT_BEGIN_DATE")} AS cert_begin_date,
 
-    -- Date and Metadata
-    REG_DATE_TIME AS reg_date_time,
-    UPD_DATE_TIME AS upd_date_time,
-    InsertDate AS insert_date,
-    InsertTime AS insert_time,
-
-    -- Logic deduplicate: Lấy bản ghi mới nhất dựa trên thời gian snapshot và cập nhật
-    ROW_NUMBER() OVER (
-      PARTITION BY BROKER_CD 
-      ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
-    ) AS row_num
-
-  FROM ${ref("bronze", "BRKTBROKER")}
-  WHERE TRADE_DATE = target_date
+        -- 6. Operational & Snapshot Metadata
+        REG_DATE_TIME AS reg_date_time,
+        ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+        UPD_DATE_TIME AS upd_date_time,
+        ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+        InsertDate AS insert_date,
+        InsertTime AS insert_time
+    FROM ${ref("bronze", "BRKTBROKER")}
+    WHERE TRADE_DATE = target_date
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY BROKER_CD 
+        ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+    ) = 1
 )
 
-SELECT * EXCEPT(row_num)
-FROM base_data
-WHERE row_num = 1
+SELECT
+    ${when(incremental(), 
+        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
+        `CURRENT_TIMESTAMP()`
+    )} AS _ingested_at,
+    CURRENT_TIMESTAMP() AS _updated_at,
+    stg.*,
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target 
+    ON stg.broker_cd = target.broker_cd AND stg.insert_date = target.insert_date`
+)}

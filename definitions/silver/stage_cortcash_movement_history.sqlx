@@ -5,6 +5,10 @@ config {
     description: "Bảng Staging chuẩn hóa lịch sử giao dịch tiền của khách hàng từ hệ thống Core (CORTCASH_MOVEMENT_HISTORY). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo allo_date và ref_no.",
     tags: ["silver", "cash", "daily"],
     columns: {
+        // Audit luồng Dataform
+        _ingested_at: "Thời điểm giao dịch lần đầu được đưa vào hệ thống Silver",
+        _updated_at: "Thời điểm giao dịch được cập nhật/xử lý mới nhất",
+        
         // Keys & Identifiers
         allo_date: "Ngày xử lý giao dịch (Khóa chính cùng với ref_no)",
         ref_no: "Số tham chiếu giao dịch (Khóa chính cùng với allo_date)",
@@ -62,62 +66,78 @@ pre_operations {
   );
 }
 
-WITH base_data AS (
-  SELECT
-    -- Date Parsing using global helper (parse_date) for numeric date fields
-    ${func.parse_date("ALLO_DATE")} AS allo_date,
-    ${func.parse_date("ENTRY_DATE")} AS entry_date,
-    ${func.parse_date("SRC_DATE")} AS src_date,
+pre_operations {
+  DECLARE target_date DATE;
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(${func.parse_date("ALLO_DATE")}) FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")})`
+    }
+  );
+}
 
-    -- Identifiers and Numeric Values (Casting to INT64 or NUMERIC)
-    CAST(REF_NO AS INT64) AS ref_no,
-    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
-    CAST(CUST_CD AS INT64) AS cust_cd,
-    CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
-    CAST(APPROVEMENT_ID AS INT64) AS approvement_id,
-    CAST(SRC_NO AS INT64) AS src_no,
-    CAST(TRADE_TYPE AS INT64) AS trade_type,
-    CAST(UTIL_CASH_ID AS INT64) AS util_cash_id,
-    CAST(STATUS AS INT64) AS status,
+WITH staging_data AS (
+    SELECT
+        -- 1. Keys & Identifiers
+        ${func.parse_date("ALLO_DATE")} AS allo_date,
+        CAST(REF_NO AS INT64) AS ref_no,
+        CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+        CAST(CUST_CD AS INT64) AS cust_cd,
+        ${func.clean_null_string("CUST_NO")} AS cust_no,
+        CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
+        ${func.clean_null_string("SUB_ACCO_NO")} AS sub_acco_no,
 
-    -- Amounts (Numeric precision preserved)
-    CAST(BEGIN_AMOUNT AS NUMERIC) AS begin_amount,
-    CAST(AMOUNT AS NUMERIC) AS amount,
-    CAST(AFTER_AMOUNT AS NUMERIC) AS after_amount,
+        -- 2. Transaction Details
+        ${func.parse_date("ENTRY_DATE")} AS entry_date,
+        CAST(APPROVEMENT_ID AS INT64) AS approvement_id,
+        ${func.clean_null_string("GROUP_CATEGORY")} AS group_category,
+        ${func.clean_null_string("TASK_CD")} AS task_cd,
+        ${func.parse_date("SRC_DATE")} AS src_date,
+        CAST(SRC_NO AS INT64) AS src_no,
+        ${func.clean_null_string("SRC_TRANSACTION_CD")} AS src_transaction_cd,
+        ${func.clean_null_string("CURR_CD")} AS curr_cd,
 
-    -- String Cleaning logic using the global helper
-    ${func.clean_null_string("CUST_NO")} AS cust_no,
-    ${func.clean_null_string("SUB_ACCO_NO")} AS sub_acco_no,
-    ${func.clean_null_string("GROUP_CATEGORY")} AS group_category,
-    ${func.clean_null_string("TASK_CD")} AS task_cd,
-    ${func.clean_null_string("SRC_TRANSACTION_CD")} AS src_transaction_cd,
-    ${func.clean_null_string("CURR_CD")} AS curr_cd,
-    ${func.clean_null_string("AMOUNT_TYPE")} AS amount_type,
-    ${func.clean_null_string("UTIL_CD")} AS util_cd,
-    ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
-    ${func.clean_null_string("REMARKS")} AS remarks,
-    ${func.clean_null_string("MEMO")} AS memo,
-    ${func.clean_null_string("INTERNAL_BALANCE_CODE")} AS internal_balance_code,
-    ${func.clean_null_string("DOC")} AS doc,
-    ${func.clean_null_string("APPROVED_USER_ID")} AS approved_user_id,
-    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
-    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+        -- 3. Amounts (Preserving Precision)
+        CAST(BEGIN_AMOUNT AS NUMERIC) AS begin_amount,
+        CAST(AMOUNT AS NUMERIC) AS amount,
+        ${func.clean_null_string("AMOUNT_TYPE")} AS amount_type,
+        CAST(TRADE_TYPE AS INT64) AS trade_type,
+        CAST(AFTER_AMOUNT AS NUMERIC) AS after_amount,
 
-    -- Timestamps and Technical dates
-    APPROVED_DATE_TIME AS approved_date_time,
-    REG_DATE_TIME AS reg_date_time,
-    UPD_DATE_TIME AS upd_date_time,
+        -- 4. Status & Utility
+        ${func.clean_null_string("UTIL_CD")} AS util_cd,
+        CAST(UTIL_CASH_ID AS INT64) AS util_cash_id,
+        CAST(STATUS AS INT64) AS status,
+        ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
+        ${func.clean_null_string("INTERNAL_BALANCE_CODE")} AS internal_balance_code,
+        ${func.clean_null_string("DOC")} AS doc,
 
-    -- Logic deduplicate: Partition theo tổ hợp khóa chính và lấy bản ghi cập nhật sau cùng
-    ROW_NUMBER() OVER (
-      PARTITION BY ALLO_DATE, REF_NO 
-      ORDER BY UPD_DATE_TIME DESC
-    ) AS row_num
-
-  FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")}
-  WHERE ALLO_DATE = target_date
+        -- 5. Comments & Operational Audit
+        ${func.clean_null_string("REMARKS")} AS remarks,
+        ${func.clean_null_string("MEMO")} AS memo,
+        APPROVED_DATE_TIME AS approved_date_time,
+        ${func.clean_null_string("APPROVED_USER_ID")} AS approved_user_id,
+        REG_DATE_TIME AS reg_date_time,
+        ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+        UPD_DATE_TIME AS upd_date_time,
+        ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id
+    FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")}
+    WHERE ${func.parse_date("ALLO_DATE")} = target_date
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ALLO_DATE, REF_NO 
+        ORDER BY UPD_DATE_TIME DESC
+    ) = 1
 )
 
-SELECT * EXCEPT(row_num)
-FROM base_data
-WHERE row_num = 1
+SELECT
+    ${when(incremental(), 
+        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
+        `CURRENT_TIMESTAMP()`
+    )} AS _ingested_at,
+    CURRENT_TIMESTAMP() AS _updated_at,
+    stg.*,
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target 
+    ON stg.allo_date = target.allo_date AND stg.ref_no = target.ref_no`
+)}

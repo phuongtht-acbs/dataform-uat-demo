@@ -5,6 +5,10 @@ config {
     description: "Bảng Staging lưu trữ các thông tin mở rộng về tài sản theo subaccount từ hệ thống Core (CORTASSET_EXT). Thực hiện làm sạch dữ liệu, parse ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
     tags: ["silver", "subaccount", "daily"],
     columns: {
+        // Audit luồng Dataform
+        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
+        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
+
         // Identifiers & Dates
         sub_acco_cd: "Mã định danh tiểu khoản (Dùng để deduplicate)",
         business_date: "Ngày nghiệp vụ phát sinh dữ liệu",
@@ -57,14 +61,14 @@ pre_operations {
   );
 }
 
-WITH base_data AS (
+WITH staging_data AS (
   SELECT
     -- Primary Keys & Dates
     CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
     ${func.parse_date("BUSINESS_DATE")} AS business_date,
     CAST(DEL_CD AS INT64) = 9 AS is_deleted,
 
-    -- Cash and Security Pending Amounts (Numeric 18,4)
+    -- Cash and Security Pending Amounts
     CAST(CASH_PENDING_BLOCK_AMT AS NUMERIC) AS cash_pending_block_amt,
     CAST(CASH_PENDING_PAY_AMT AS NUMERIC) AS cash_pending_pay_amt,
     CAST(SEC_PENDING_BLOCK_AMT AS NUMERIC) AS sec_pending_block_amt,
@@ -77,7 +81,7 @@ WITH base_data AS (
     CAST(IS_AUTO_ADVANCE AS INT64) AS is_auto_advance,
     CAST(IS_AUTO_MORTGAGE AS INT64) AS is_auto_mortgage,
 
-    -- Margin Rates (Numeric 7,5 -> Float64)
+    -- Margin Rates
     CAST(RETENTION_RATE AS FLOAT64) AS retention_rate,
     CAST(TN_RATE AS FLOAT64) AS tn_rate,
     CAST(MARGIN_RATE AS FLOAT64) AS margin_rate,
@@ -89,24 +93,31 @@ WITH base_data AS (
     CAST(MARGIN_LIMIT_GRP AS NUMERIC) AS margin_limit_grp,
     CAST(MARGIN_LIMIT AS NUMERIC) AS margin_limit,
 
-    -- String cleaning for codes and user IDs
+    -- String cleaning
     ${func.clean_null_string("MARGIN_BROKER_CD")} AS margin_broker_cd,
     ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
     ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
 
-    -- Technical Timestamps and Dates
+    -- Technical Metadata
     REG_DATE_TIME AS reg_date_time,
     UPD_DATE_TIME AS upd_date_time,
     InsertDate AS insert_date,
-    InsertTime AS insert_time,
-
-    -- Window Function để xác định bản ghi mới nhất
-    ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
+    InsertTime AS insert_time
 
   FROM ${ref("bronze", "CORTASSET_EXT")}
-  WHERE BUSINESS_DATE = target_date
+  WHERE InsertDate = target_date
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) = 1
 )
 
-SELECT * EXCEPT(row_num)
-FROM base_data
-WHERE row_num = 1
+SELECT
+    ${when(incremental(), 
+        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
+        `CURRENT_TIMESTAMP()`
+    )} AS _ingested_at,
+    CURRENT_TIMESTAMP() AS _updated_at,
+    stg.*
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target 
+    ON stg.sub_acco_cd = target.sub_acco_cd AND stg.insert_date = target.insert_date`
+)}

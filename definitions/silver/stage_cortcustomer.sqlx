@@ -1,10 +1,18 @@
 config {
-    type: "table",
+    type: "incremental",
     schema: "silver",
     name: "stage_cortcustomer",
-    description: "Bảng Staging chuẩn hóa thông tin khách hàng từ hệ thống Core (CORTCUSTOMER). Thực hiện làm sạch dữ liệu và parse ngày tháng.",
+    description: "Bảng Staging lưu trữ lịch sử snapshot thông tin khách hàng. Dữ liệu được chuẩn hóa và lưu trữ lịch sử theo từng ngày.",
     tags: ["silver", "customer", "daily"],
+    uniqueKey: ["cust_cd", "insert_date"],
+    bigquery: {
+        partitionBy: "insert_date",
+    },
     columns: {
+        // Audit luồng Dataform
+        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
+        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
+        
         cust_cd: "Một khách hàng cust_no có thể có nhiều cust_cd",
         is_deleted: "Dữ liệu đã xóa hay chưa",
         cust_no: "Số tài khoản lưu ký, giao dịch",
@@ -72,94 +80,99 @@ config {
 pre_operations {
   DECLARE target_date DATE;
   SET target_date = (
-    SELECT 
-      ${dataform.projectConfig.vars.target_date 
-        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `MAX(InsertDate) FROM ${ref("bronze", "CORTCUSTOMER")}`
-      }
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(InsertDate) FROM ${ref("bronze", "CORTCUSTOMER")})`
+    }
   );
 }
 
-WITH base_data AS (
-  SELECT
-    -- Identifier 
-    CAST(CUST_CD AS INT64) AS cust_cd,
-    ${func.clean_null_string("CUST_NO")} AS cust_no,
+WITH staging_data AS (
+    SELECT
+        -- 1. Identifier 
+        CAST(CUST_CD AS INT64) AS cust_cd,
+        ${func.clean_null_string("CUST_NO")} AS cust_no,
 
-    -- Codes
-    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
-    CAST(CUST_TYPE AS INT64) AS cust_type,
-    CAST(FOREIGN_TYPE AS INT64) AS foreign_type,
-    CAST(SEX AS INT64) AS sex,
-    CAST(EMAIL_FLG AS INT64) AS email_flg,
-    CAST(APPROVAL_CD AS INT64) AS approval_cd,
-    CAST(JOB AS INT64) AS job,
-    CAST(CHANNEL_ID AS INT64) AS channel_id,
-    CAST(NUMBER_OF_SIG AS INT64) AS number_of_sig,
-    CAST(ACCO_DIVIDE AS INT64) AS acco_divide,
-    CAST(ACCO_STS AS INT64) AS acco_sts,
-    CAST(ORDER_MONEY_CONF AS INT64) AS order_money_conf,
-    CAST(ORDER_STOCK_CONF AS INT64) AS order_stock_conf,
-    CAST(NOT_COLLECT_TAX AS INT64) AS not_collect_tax,
-    CAST(CONTRACT_STATUS AS INT64) AS contract_status,
-    CAST(VSD_STATUS AS INT64) AS vsd_status,
-    CAST(SRC_CHANNEL AS INT64) AS src_channel,
-    CAST(PRES_APPROVAL_CD AS INT64) AS pres_approval_cd,
+        -- 2. Codes & Flags
+        CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+        CAST(CUST_TYPE AS INT64) AS cust_type,
+        CAST(FOREIGN_TYPE AS INT64) AS foreign_type,
+        CAST(SEX AS INT64) AS sex,
+        CAST(EMAIL_FLG AS INT64) AS email_flg,
+        CAST(APPROVAL_CD AS INT64) AS approval_cd,
+        CAST(JOB AS INT64) AS job,
+        CAST(CHANNEL_ID AS INT64) AS channel_id,
+        CAST(NUMBER_OF_SIG AS INT64) AS number_of_sig,
+        CAST(ACCO_DIVIDE AS INT64) AS acco_divide,
+        CAST(ACCO_STS AS INT64) AS acco_sts,
+        CAST(ORDER_MONEY_CONF AS INT64) AS order_money_conf,
+        CAST(ORDER_STOCK_CONF AS INT64) AS order_stock_conf,
+        CAST(NOT_COLLECT_TAX AS INT64) AS not_collect_tax,
+        CAST(CONTRACT_STATUS AS INT64) AS contract_status,
+        CAST(VSD_STATUS AS INT64) AS vsd_status,
+        CAST(SRC_CHANNEL AS INT64) AS src_channel,
+        CAST(PRES_APPROVAL_CD AS INT64) AS pres_approval_cd,
 
-    -- String cleaning
-    ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
-    ${func.clean_null_string("CUST_FAMILY_NAME")} AS cust_family_name,
-    ${func.clean_null_string("CUST_GIVEN_NAME")} AS cust_given_name,
-    ${func.clean_null_string("TAX_CODE")} AS tax_code,
-    ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
-    ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
-    ${func.clean_null_string("ID_NUMBER")} AS id_number,
-    ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
-    ${func.clean_null_string("COUNTRY_CD")} AS country_cd,
-    ${func.clean_null_string("BROKER_CD")} AS broker_cd,
-    ${func.clean_null_string("INTRODUCER_CD")} AS introducer_cd,
-    ${func.clean_null_string("DEPARTMENT_CD")} AS department_cd,
-    ${func.clean_null_string("COM3_CUST_TYPE")} AS com3_cust_type,
-    ${func.clean_null_string("PRES_NAME")} AS pres_name,
-    ${func.clean_null_string("PRES_POSITION")} AS pres_position,
-    ${func.clean_null_string("PRES_COUNTRY_CD")} AS pres_country_cd,
-    ${func.clean_null_string("PRES_ID_NUMBER")} AS pres_id_number,
-    ${func.clean_null_string("PRES_ISSUE_LOCATION")} AS pres_issue_location,
-    ${func.clean_null_string("PRES_TEL_NO")} AS pres_tel_no,
-    ${func.clean_null_string("PRES_EMAIL_ADRS")} AS pres_email_adrs,
-    ${func.clean_null_string("CONTRACT_NO")} AS contract_no,
-    ${func.clean_null_string("REASON_REJECT")} AS reason_reject,
-    ${func.clean_null_string("REMARKS")} AS remarks,
-    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
-    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
-    ${func.clean_null_string("SID")} AS sid,
-    ${func.clean_null_string("PCOD")} AS pcod,
+        -- 3. String Cleaning
+        ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
+        ${func.clean_null_string("CUST_FAMILY_NAME")} AS cust_family_name,
+        ${func.clean_null_string("CUST_GIVEN_NAME")} AS cust_given_name,
+        ${func.clean_null_string("TAX_CODE")} AS tax_code,
+        ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
+        ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
+        ${func.clean_null_string("ID_NUMBER")} AS id_number,
+        ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
+        ${func.clean_null_string("COUNTRY_CD")} AS country_cd,
+        ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+        ${func.clean_null_string("INTRODUCER_CD")} AS introducer_cd,
+        ${func.clean_null_string("DEPARTMENT_CD")} AS department_cd,
+        ${func.clean_null_string("COM3_CUST_TYPE")} AS com3_cust_type,
+        ${func.clean_null_string("PRES_NAME")} AS pres_name,
+        ${func.clean_null_string("PRES_POSITION")} AS pres_position,
+        ${func.clean_null_string("PRES_COUNTRY_CD")} AS pres_country_cd,
+        ${func.clean_null_string("PRES_ID_NUMBER")} AS pres_id_number,
+        ${func.clean_null_string("PRES_ISSUE_LOCATION")} AS pres_issue_location,
+        ${func.clean_null_string("PRES_TEL_NO")} AS pres_tel_no,
+        ${func.clean_null_string("PRES_EMAIL_ADRS")} AS pres_email_adrs,
+        ${func.clean_null_string("CONTRACT_NO")} AS contract_no,
+        ${func.clean_null_string("REASON_REJECT")} AS reason_reject,
+        ${func.clean_null_string("REMARKS")} AS remarks,
+        ${func.clean_null_string("SID")} AS sid,
+        ${func.clean_null_string("PCOD")} AS pcod,
 
-    -- Date Parsing
-    ${func.parse_date("BIRTHDAY")} AS birthday,
-    ${func.parse_date("ISSUE_DATE")} AS issue_date,
-    ${func.parse_date("EXPIRE_DATE")} AS expire_date,
-    ${func.parse_date("PRES_BIRTHDAY")} AS pres_birthday,
-    ${func.parse_date("PRES_ISSUE_DATE")} AS pres_issue_date,
-    ${func.parse_date("PRES_EXPIRE_DATE")} AS pres_expire_date,
-    ${func.parse_date("ACCO_ACT_DATE")} AS acco_act_date,
-    ${func.parse_date("ACCO_STS_DATE")} AS acco_sts_date,
-    ${func.parse_date("ACCO_STR_DATE")} AS acco_str_date,
-    ${func.parse_date("CONTRACT_COMPLETE_DATE")} AS contract_complete_date,
+        -- 4. Date Parsing
+        ${func.parse_date("BIRTHDAY")} AS birthday,
+        ${func.parse_date("ISSUE_DATE")} AS issue_date,
+        ${func.parse_date("EXPIRE_DATE")} AS expire_date,
+        ${func.parse_date("PRES_BIRTHDAY")} AS pres_birthday,
+        ${func.parse_date("PRES_ISSUE_DATE")} AS pres_issue_date,
+        ${func.parse_date("PRES_EXPIRE_DATE")} AS pres_expire_date,
+        ${func.parse_date("ACCO_ACT_DATE")} AS acco_act_date,
+        ${func.parse_date("ACCO_STS_DATE")} AS acco_sts_date,
+        ${func.parse_date("ACCO_STR_DATE")} AS acco_str_date,
+        ${func.parse_date("CONTRACT_COMPLETE_DATE")} AS contract_complete_date,
 
-    -- Timestamps and Raw Dates
-    REG_DATE_TIME AS reg_date_time,
-    UPD_DATE_TIME AS upd_date_time,
-    InsertDate AS insert_date,
-    InsertTime AS insert_time,
-
-    -- Window Function for deduplication
-    ROW_NUMBER() OVER (PARTITION BY CUST_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
-  FROM ${ref("bronze", "CORTCUSTOMER")}
-  WHERE InsertDate = target_date
+        -- 5. Operational & Snapshot Metadata
+        REG_DATE_TIME AS reg_date_time,
+        ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+        UPD_DATE_TIME AS upd_date_time,
+        ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+        InsertDate AS insert_date,
+        InsertTime AS insert_time
+    FROM ${ref("bronze", "CORTCUSTOMER")}
+    WHERE InsertDate = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY CUST_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) = 1
 )
 
 SELECT
-  * EXCEPT(row_num)
-FROM base_data
-WHERE row_num = 1
+    ${when(incremental(), 
+        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
+        `CURRENT_TIMESTAMP()`
+    )} AS _ingested_at,
+    CURRENT_TIMESTAMP() AS _updated_at,
+    stg.*,
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target 
+    ON stg.cust_cd = target.cust_cd AND stg.insert_date = target.insert_date`
+)}
