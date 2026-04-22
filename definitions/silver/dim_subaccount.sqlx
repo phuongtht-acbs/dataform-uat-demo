@@ -99,6 +99,8 @@ current_dim AS (
 
 -- 3. Insert các record mới hoặc có thay đổi nội dung
 SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
     ${func.generate_hash(["stg.sub_acco_no", "CAST(target_date AS TIMESTAMP)"])} AS dim_subaccount_key,
     CAST(target_date AS TIMESTAMP) valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
@@ -118,8 +120,9 @@ post_operations {
   ON t.sub_acco_no = s.sub_acco_no
   AND t.is_current = true
   AND t.record_hash != s.record_hash
-  WHEN MATCHED THEN
-    UPDATE SET 
-      t.valid_to = CAST(target_date AS TIMESTAMP),
-      t.is_current = false;
+  WHEN MATCHED THEN UPDATE
+    SET
+    t._updated_at = run_time,
+    t.valid_to = CAST(target_date AS TIMESTAMP),
+    t.is_current = false;
 }

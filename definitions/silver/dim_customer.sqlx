@@ -11,7 +11,9 @@ config {
 }
 
 pre_operations {
-  -- Xác định target_date: Ưu tiên biến vars, nếu không có sẽ lấy MAX insert_date từ staging
+  -- 1. Xác định thời gian chạy
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  -- 2. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
@@ -110,6 +112,8 @@ current_dim AS (
 
 -- 3. Insert bản ghi mới (New) hoặc bản ghi thay đổi (Updated)
 SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
     ${func.generate_hash(["stg.cust_no", "CAST(target_date AS TIMESTAMP)"])} AS dim_customer_key,
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
@@ -128,7 +132,8 @@ post_operations {
   USING staging_data AS s
   ON t.cust_no = s.cust_no AND t.is_current AND t.record_hash != s.record_hash
   WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
+      t._updated_at = run_time,
       t.valid_to = CAST(target_date AS TIMESTAMP),
       t.is_current = false;
 }
