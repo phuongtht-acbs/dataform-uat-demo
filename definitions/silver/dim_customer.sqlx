@@ -121,12 +121,10 @@ SELECT
     stg.*
 FROM staging_data AS stg
 LEFT JOIN current_dim AS cur ON stg.cust_no = cur.cust_no
-WHERE 
-    cur.cust_no IS NULL -- Khách hàng mới hoàn toàn
-    OR stg.record_hash != cur.record_hash -- Khách hàng có thay đổi thông tin
+WHERE cur.cust_no IS NULL OR stg.record_hash != cur.record_hash
 
--- 4. Đóng phiên bản cũ khi có dữ liệu mới/thay đổi
-post_operations {
+
+post_operations { -- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
   USING staging_data AS s
   ON t.cust_no = s.cust_no AND t.is_current AND t.record_hash != s.record_hash

@@ -108,13 +108,9 @@ SELECT
     stg.*,
 FROM staging_data AS stg
 LEFT JOIN current_dim AS cur ON stg.sub_acco_no = cur.sub_acco_no
-WHERE 
-    cur.sub_acco_no IS NULL -- record mới
-    OR stg.record_hash != cur.record_hash -- record có thay đổi
+WHERE cur.sub_acco_no IS NULL OR stg.record_hash != cur.record_hash
 
-
--- 4. Đóng record cũ khi có phiên bản mới
-post_operations {
+post_operations { -- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
   USING staging_data AS s
   ON t.sub_acco_no = s.sub_acco_no
