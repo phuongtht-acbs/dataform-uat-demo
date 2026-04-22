@@ -93,7 +93,6 @@ LEFT JOIN current_dim AS cur ON stg.broker_cd = cur.broker_cd
 WHERE 
     cur.broker_cd IS NULL 
     OR stg.record_hash != cur.record_hash
-;
 
 -- 4. Đóng phiên bản cũ khi có dữ liệu mới/thay đổi
 post_operations {

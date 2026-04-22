@@ -124,7 +124,6 @@ LEFT JOIN current_dim AS cur ON stg.cust_no = cur.cust_no
 WHERE 
     cur.cust_no IS NULL -- Khách hàng mới hoàn toàn
     OR stg.record_hash != cur.record_hash -- Khách hàng có thay đổi thông tin
-;
 
 -- 4. Đóng phiên bản cũ khi có dữ liệu mới/thay đổi
 post_operations {

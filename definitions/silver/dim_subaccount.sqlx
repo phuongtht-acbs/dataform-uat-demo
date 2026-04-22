@@ -111,7 +111,7 @@ LEFT JOIN current_dim AS cur ON stg.sub_acco_no = cur.sub_acco_no
 WHERE 
     cur.sub_acco_no IS NULL -- record mới
     OR stg.record_hash != cur.record_hash -- record có thay đổi
-;
+
 
 -- 4. Đóng record cũ khi có phiên bản mới
 post_operations {
