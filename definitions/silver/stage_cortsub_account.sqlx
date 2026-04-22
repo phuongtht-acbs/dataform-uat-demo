@@ -62,7 +62,9 @@ config {
 }
 
 pre_operations {
-  -- 1. Xác định target_date
+  -- 1. Xác định thời gian chạy
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  -- 2. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
@@ -70,8 +72,6 @@ pre_operations {
       : `(SELECT MAX(InsertDate) FROM ${ref("bronze", "CORTSUB_ACCOUNT")})`
     }
   );
-  -- 2. Xác định thời gian chạy
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
 }
 
 WITH staging_data AS (
