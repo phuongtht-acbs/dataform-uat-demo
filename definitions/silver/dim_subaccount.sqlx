@@ -120,6 +120,6 @@ post_operations {
   AND t.record_hash != s.record_hash
   WHEN MATCHED THEN
     UPDATE SET 
-      t.end_date = target_date,
+      t.valid_to = CAST(target_date AS TIMESTAMP),
       t.is_current = false;
 }
