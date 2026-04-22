@@ -51,6 +51,7 @@ config {
 }
 
 pre_operations {
+  -- 1. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     SELECT 
@@ -59,6 +60,8 @@ pre_operations {
         : `MAX(BUSINESS_DATE) FROM ${ref("bronze", "CORTASSET_EXT")}`
       }
   );
+  -- 2. Xác định thời gian chạy
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
 }
 
 WITH staging_data AS (
@@ -110,11 +113,8 @@ WITH staging_data AS (
 )
 
 SELECT
-    ${when(incremental(), 
-        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
-        `CURRENT_TIMESTAMP()`
-    )} AS _ingested_at,
-    CURRENT_TIMESTAMP() AS _updated_at,
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
     stg.*
 FROM staging_data AS stg
 ${when(incremental(), 

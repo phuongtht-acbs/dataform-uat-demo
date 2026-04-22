@@ -12,7 +12,7 @@ config {
         // Audit luồng Dataform
         _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
         _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
-        
+
         cust_cd: "Một khách hàng cust_no có thể có nhiều cust_cd",
         is_deleted: "Dữ liệu đã xóa hay chưa",
         cust_no: "Số tài khoản lưu ký, giao dịch",
@@ -78,6 +78,7 @@ config {
 }
 
 pre_operations {
+  -- 1. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
@@ -85,6 +86,8 @@ pre_operations {
       : `(SELECT MAX(InsertDate) FROM ${ref("bronze", "CORTCUSTOMER")})`
     }
   );
+  -- 2. Xác định thời gian chạy
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
 }
 
 WITH staging_data AS (
@@ -165,11 +168,8 @@ WITH staging_data AS (
 )
 
 SELECT
-    ${when(incremental(), 
-        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
-        `CURRENT_TIMESTAMP()`
-    )} AS _ingested_at,
-    CURRENT_TIMESTAMP() AS _updated_at,
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
     stg.*,
 FROM staging_data AS stg
 ${when(incremental(), 

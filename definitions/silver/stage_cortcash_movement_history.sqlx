@@ -8,7 +8,7 @@ config {
         // Audit luồng Dataform
         _ingested_at: "Thời điểm giao dịch lần đầu được đưa vào hệ thống Silver",
         _updated_at: "Thời điểm giao dịch được cập nhật/xử lý mới nhất",
-        
+
         // Keys & Identifiers
         allo_date: "Ngày xử lý giao dịch (Khóa chính cùng với ref_no)",
         ref_no: "Số tham chiếu giao dịch (Khóa chính cùng với allo_date)",
@@ -56,6 +56,7 @@ config {
 }
 
 pre_operations {
+  -- 1. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     SELECT 
@@ -64,6 +65,8 @@ pre_operations {
         : `MAX(ALLO_DATE) FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")}`
       }
   );
+  -- 2. Xác định thời gian chạy
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
 }
 
 pre_operations {
@@ -130,11 +133,8 @@ WITH staging_data AS (
 )
 
 SELECT
-    ${when(incremental(), 
-        `COALESCE(target._ingested_at, CURRENT_TIMESTAMP())`, 
-        `CURRENT_TIMESTAMP()`
-    )} AS _ingested_at,
-    CURRENT_TIMESTAMP() AS _updated_at,
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
     stg.*,
 FROM staging_data AS stg
 ${when(incremental(), 
