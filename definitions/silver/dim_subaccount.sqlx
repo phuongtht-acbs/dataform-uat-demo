@@ -90,7 +90,7 @@ post_operations {-- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
   USING (
     SELECT
-        s.sub_acco_no,
+        s.sub_acco_cd,
         ${func.generate_hash([
             "s.sub_acco_cd", "s.is_deleted", "s.cust_cd", "s.acco_type", "s.algos_type",
             "s.type_flg", "s.curr_cd", "s.bank_cd", "s.bank_branch_cd", "s.bank_acco_number",
@@ -100,11 +100,12 @@ post_operations {-- 4. Đóng record cũ khi có phiên bản mới
             "s.close_date", "s.reopen_date", "s.remarks", "a.is_auto_advance", 
             "a.is_auto_mortgage", "a.retention_rate", "a.warning_rate", "a.tn_rate", 
             "a.call_rate", "a.withdraw_rate", "a.margin_limit_grp", "a.margin_limit"
-        ])} AS record_hash
+        ])} AS record_hash,
     FROM ${ref("silver", "stage_cortsub_account")} AS s
     LEFT JOIN ${ref("silver", "stage_cortasset_ext")} AS a 
         ON s.sub_acco_cd = a.sub_acco_cd AND a.insert_date = target_date
     WHERE s.insert_date = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY s.sub_acco_no ORDER BY s.sub_acco_cd DESC) = 1
   ) AS src
   ON t.sub_acco_no = src.sub_acco_no
   AND t.is_current = true

@@ -40,7 +40,7 @@ WITH staging_data AS (
             "order_money_conf", "order_stock_conf", "not_collect_tax", "contract_status",
             "vsd_status", "reason_reject", "src_channel", "remarks", "sid", "pcod"
         ])} AS record_hash,
-        *
+        * EXCEPT (_ingested_at, _updated_at, insert_time, insert_date, upd_user_id, upd_date_time, reg_user_id, reg_date_time)
     FROM ${ref("silver", "stage_cortcustomer")}
     WHERE insert_date = target_date
     -- Loại bỏ trùng lặp trên cust_no trong cùng 1 batch
@@ -89,9 +89,10 @@ post_operations {-- 4. Đóng record cũ khi có phiên bản mới
             "acco_sts_date", "acco_str_date", "contract_complete_date", "contract_no",
             "order_money_conf", "order_stock_conf", "not_collect_tax", "contract_status",
             "vsd_status", "reason_reject", "src_channel", "remarks", "sid", "pcod"
-        ])} AS record_hash
+        ])} AS record_hash,
     FROM ${ref("silver", "stage_cortcustomer")}
     WHERE insert_date = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY cust_no ORDER BY cust_cd DESC) = 1
   ) AS s
   ON t.cust_no = s.cust_no AND t.is_current AND t.record_hash != s.record_hash
   WHEN MATCHED THEN
