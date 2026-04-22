@@ -5,7 +5,6 @@ config {
     description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
     tags: ["silver", "subaccount", "daily"],
     columns: {
-        is_latest: "Dòng dữ liệu có phải là mới nhất tính theo sub_acco_no hay không",
         // Keys & Identifiers
         sub_acco_cd: "Tự động tăng toàn bảng (Dùng để deduplicate)",
         is_deleted: "Dữ liệu đã xóa hay chưa",
@@ -112,7 +111,6 @@ WITH base_data AS (
     -- Window Function for deduplication
     -- Ưu tiên bản ghi mới nhất dựa trên thời gian snapshot và cập nhật
     ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
-    ROW_NUMBER() OVER(PARTITION BY SUB_ACCO_NO ORDER BY SUB_ACCO_CD DESC, InsertTime DESC) = 1 as is_latest,
   FROM ${ref("bronze", "CORTSUB_ACCOUNT")}
   WHERE InsertDate = target_date
 )

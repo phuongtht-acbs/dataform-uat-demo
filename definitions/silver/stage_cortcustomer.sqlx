@@ -5,7 +5,6 @@ config {
     description: "Bảng Staging chuẩn hóa thông tin khách hàng từ hệ thống Core (CORTCUSTOMER). Thực hiện làm sạch dữ liệu và parse ngày tháng.",
     tags: ["silver", "customer", "daily"],
     columns: {
-        is_latest: "Dòng dữ liệu có phải là mới nhất tính theo cust_no hay không",
         cust_cd: "Một khách hàng cust_no có thể có nhiều cust_cd",
         is_deleted: "Dữ liệu đã xóa hay chưa",
         cust_no: "Số tài khoản lưu ký, giao dịch",
@@ -156,13 +155,11 @@ WITH base_data AS (
 
     -- Window Function for deduplication
     ROW_NUMBER() OVER (PARTITION BY CUST_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
-    ROW_NUMBER() OVER(PARTITION BY CUST_NO ORDER BY CUST_CD DESC, InsertTime DESC, UPD_DATE_TIME DESC) = 1 as is_latest,
   FROM ${ref("bronze", "CORTCUSTOMER")}
   WHERE InsertDate = target_date
 )
 
 SELECT
-  
   * EXCEPT(row_num)
 FROM base_data
 WHERE row_num = 1

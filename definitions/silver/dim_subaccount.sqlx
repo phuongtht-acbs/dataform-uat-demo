@@ -2,11 +2,11 @@ config {
     type: "incremental",
     schema: "silver",
     name: "dim_subaccount",
-    description: "Bảng Dimension SCD Type 2 cho tiểu khoản. start_date/end_date được xác định dựa trên ngày snapshot lớn nhất của dữ liệu nguồn.",
-    tags: ["silver", "dimension", "subaccount"],
-    uniqueKey: ["subaccount_key"],
+    description: "Bảng Dimension SCD Type 2 cho tiểu khoản. valid_from/valid_to được xác định dựa trên ngày snapshot lớn nhất của dữ liệu nguồn.",
+    tags: ["silver", "dimension", "daily", "subaccount"],
+    uniqueKey: ["dim_subaccount_key"],
     bigquery: {
-        partitionBy: "start_date"
+        partitionBy: "DATE(valid_from)"
     }
 }
 
@@ -30,6 +30,18 @@ pre_operations {
 -- 1. Lấy dữ liệu từ Staging của batch ngày target_date
 WITH staging_data AS (
     SELECT
+        -- Hash để kiểm tra thay đổi (Fingerprint)
+        ${func.generate_hash([
+            "s.sub_acco_cd", "s.is_deleted", "s.cust_cd", "s.acco_type", "s.algos_type",
+            "s.type_flg", "s.curr_cd", "s.bank_cd", "s.bank_branch_cd", "s.bank_acco_number",
+            "s.bank_acco_name", "s.bank_acco_id_no", "s.bank_flg", "s.not_update_by_cust",
+            "s.contract_no", "s.source_channel", "s.broker_cd", "s.acco_sts", "s.acco_flg",
+            "s.trade_acco_no", "s.status", "s.source_cd", "s.source_sname", "s.open_date",
+            "s.close_date", "s.reopen_date", "s.remarks", "a.is_auto_advance", 
+            "a.is_auto_mortgage", "a.retention_rate", "a.warning_rate", "a.tn_rate", 
+            "a.call_rate", "a.withdraw_rate", "a.margin_limit_grp", "a.margin_limit"
+        ])} AS record_hash,
+        -- Các trường từ cortsub_account
         s.sub_acco_cd,
         s.is_deleted,
         s.cust_cd,
@@ -58,7 +70,7 @@ WITH staging_data AS (
         s.close_date,
         s.reopen_date,
         s.remarks,
-        -- Các trường từ Asset Ext
+        -- Các trường từ cortasset_ext
         a.is_auto_advance,
         a.is_auto_mortgage,
         a.retention_rate,
@@ -67,29 +79,13 @@ WITH staging_data AS (
         a.call_rate,
         a.withdraw_rate,
         a.margin_limit_grp,
-        a.margin_limit,
-        -- Hash để kiểm tra thay đổi (Fingerprint)
-        ${func.generate_hash([
-            "s.sub_acco_cd", "s.is_deleted", "s.cust_cd", "s.acco_type", "s.algos_type",
-            "s.type_flg", "s.curr_cd", "s.bank_cd", "s.bank_branch_cd", "s.bank_acco_number",
-            "s.bank_acco_name", "s.bank_acco_id_no", "s.bank_flg", "s.not_update_by_cust",
-            "s.contract_no", "s.source_channel", "s.broker_cd", "s.acco_sts", "s.acco_flg",
-            "s.trade_acco_no", "s.status", "s.source_cd", "s.source_sname", "s.open_date",
-            "s.close_date", "s.reopen_date", "s.remarks", "a.is_auto_advance", 
-            "a.is_auto_mortgage", "a.retention_rate", "a.warning_rate", "a.tn_rate", 
-            "a.call_rate", "a.withdraw_rate", "a.margin_limit_grp", "a.margin_limit"
-        ])} AS record_hash
-    FROM
-        ${ref("silver", "stage_cortsub_account")} AS s
-    LEFT JOIN
-        ${ref("silver", "stage_cortasset_ext")} AS a
-    ON
-        s.sub_acco_cd = a.sub_acco_cd
-    WHERE
-        s.is_latest = true
-        AND s.insert_date = target_date -- Đồng bộ dữ liệu theo đúng batch ngày được chọn
+        a.margin_limit
+    FROM ${ref("silver", "stage_cortsub_account")} AS s
+    LEFT JOIN ${ref("silver", "stage_cortasset_ext")} AS a 
+        ON s.sub_acco_cd = a.sub_acco_cd AND a.insert_date = target_date
+    WHERE s.insert_date = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY sub_acco_no ORDER BY s.sub_acco_cd DESC) = 1
 ),
-
 -- 2. Lấy thông tin hiện tại từ bảng Dimension
 current_dim AS (
     SELECT
@@ -101,29 +97,29 @@ current_dim AS (
         is_current = true
 )
 
--- 3. Insert các bản ghi mới hoặc có thay đổi nội dung
+-- 3. Insert các record mới hoặc có thay đổi nội dung
 SELECT
-    -- Surrogate Key (Business Key + start_date)
-    ${func.generate_hash(["stg.sub_acco_no", "target_date"])} AS dim_subaccount_key,
+    ${func.generate_hash(["stg.sub_acco_no", "CAST(target_date AS TIMESTAMP)"])} AS dim_subaccount_key,
+    CAST(target_date AS TIMESTAMP) valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
+    true AS is_current,
     stg.*,
-    target_date AS start_date,
-    CAST(NULL AS DATE) AS end_date,
-    true AS is_current
 FROM staging_data AS stg
 LEFT JOIN current_dim AS cur ON stg.sub_acco_no = cur.sub_acco_no
-WHERE
-    cur.sub_acco_no IS NULL 
-    OR stg.record_hash != cur.record_hash
+WHERE 
+    cur.sub_acco_no IS NULL -- record mới
+    OR stg.record_hash != cur.record_hash -- record có thay đổi
+;
 
--- 4. Đóng phiên bản cũ khi có phiên bản mới
+-- 4. Đóng record cũ khi có phiên bản mới
 post_operations {
-  MERGE ${self()} AS target
-  USING staging_data AS source
-  ON target.sub_acco_no = source.sub_acco_no
-  AND target.is_current = true
-  AND target.record_hash != source.record_hash
+  MERGE ${self()} AS t
+  USING staging_data AS s
+  ON t.sub_acco_no = s.sub_acco_no
+  AND t.is_current = true
+  AND t.record_hash != s.record_hash
   WHEN MATCHED THEN
     UPDATE SET 
-      target.end_date = target_date,
-      target.is_current = false;
+      t.end_date = target_date,
+      t.is_current = false;
 }

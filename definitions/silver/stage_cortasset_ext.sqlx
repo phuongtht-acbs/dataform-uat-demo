@@ -5,7 +5,6 @@ config {
     description: "Bảng Staging lưu trữ các thông tin mở rộng về tài sản theo subaccount từ hệ thống Core (CORTASSET_EXT). Thực hiện làm sạch dữ liệu, parse ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
     tags: ["silver", "subaccount", "daily"],
     columns: {
-        is_latest: "Dòng dữ liệu có phải là mới nhất tính theo sub_acco_no hay không",
         // Identifiers & Dates
         sub_acco_cd: "Mã định danh tiểu khoản (Dùng để deduplicate)",
         business_date: "Ngày nghiệp vụ phát sinh dữ liệu",
@@ -103,7 +102,6 @@ WITH base_data AS (
 
     -- Window Function để xác định bản ghi mới nhất
     ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) AS row_num,
-    ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_NO ORDER BY SUB_ACCO_CD DESC, InsertTime DESC, UPD_DATE_TIME DESC) AS is_latest
 
   FROM ${ref("bronze", "CORTASSET_EXT")}
   WHERE BUSINESS_DATE = target_date
