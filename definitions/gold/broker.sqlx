@@ -1,0 +1,33 @@
+config {
+    type: "table",
+    schema: "gold",
+    name: "broker",
+    description: "Current state of Broker information. This table provides the most recent version of each broker from the history table.",
+    tags: ["gold", "broker", "current"],
+}
+
+SELECT
+    -- Business Key
+    broker_cd,
+    
+    -- Denormalized Attributes
+    parent_broker_cd,
+    family_name,
+    given_name,
+    mobile_no,
+    email_adrs,
+    id_number,
+    user_id,
+    transaction_cd,
+    employee_type_name,
+    acco_sts_name,
+    approval_type_name,
+    basic_salary,
+    remarks,
+
+    -- Metadata & Timestamps
+    valid_from AS effective_from_date,
+    _ingested_at,
+    _updated_at
+FROM ${ref("gold", "broker_history")}
+WHERE is_current
