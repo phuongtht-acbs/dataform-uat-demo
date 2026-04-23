@@ -68,7 +68,7 @@ WITH staging_data AS (
   SELECT
     -- Primary Keys & Dates
     CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
-    ${func.parse_date("BUSINESS_DATE")} AS business_date,
+    ${func.parseDate("BUSINESS_DATE")} AS business_date,
     CAST(DEL_CD AS INT64) = 9 AS is_deleted,
 
     -- Cash and Security Pending Amounts
@@ -97,9 +97,9 @@ WITH staging_data AS (
     CAST(MARGIN_LIMIT AS NUMERIC) AS margin_limit,
 
     -- String cleaning
-    ${func.clean_null_string("MARGIN_BROKER_CD")} AS margin_broker_cd,
-    ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
-    ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+    ${func.cleanNullString("MARGIN_BROKER_CD")} AS margin_broker_cd,
+    ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
+    ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id,
 
     -- Technical Metadata
     REG_DATE_TIME AS reg_date_time,

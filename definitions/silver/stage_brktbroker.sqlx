@@ -81,7 +81,7 @@ pre_operations {
 WITH staging_data AS (
     SELECT
         -- 1. Identifiers
-        ${func.clean_null_string("BROKER_CD")} AS broker_cd,
+        ${func.cleanNullString("BROKER_CD")} AS broker_cd,
         CAST(DEL_CD AS INT64) = 9 AS is_deleted,
 
         -- 2. Numeric Status and ID Codes
@@ -98,33 +98,33 @@ WITH staging_data AS (
         CAST(BASIC_SALARY AS FLOAT64) AS basic_salary,
 
         -- 4. String Cleaning
-        ${func.clean_null_string("PARENT_BROKER_CD")} AS parent_broker_cd,
-        ${func.clean_null_string("FAMILY_NAME")} AS family_name,
-        ${func.clean_null_string("GIVEN_NAME")} AS given_name,
-        ${func.clean_null_string("MOBILE_NO")} AS mobile_no,
-        ${func.clean_null_string("EMAIL_ADRS")} AS email_adrs,
-        ${func.clean_null_string("ADRS_1")} AS adrs_1,
-        ${func.clean_null_string("ADRS_2")} AS adrs_2,
-        ${func.clean_null_string("ID_NUMBER")} AS id_number,
-        ${func.clean_null_string("ISSUE_LOCATION")} AS issue_location,
-        ${func.clean_null_string("USER_ID")} AS user_id,
-        ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
-        ${func.clean_null_string("BUSINESS_TYPE")} AS business_type,
-        ${func.clean_null_string("REMARKS")} AS remarks,
+        ${func.cleanNullString("PARENT_BROKER_CD")} AS parent_broker_cd,
+        ${func.cleanNullString("FAMILY_NAME")} AS family_name,
+        ${func.cleanNullString("GIVEN_NAME")} AS given_name,
+        ${func.cleanNullString("MOBILE_NO")} AS mobile_no,
+        ${func.cleanNullString("EMAIL_ADRS")} AS email_adrs,
+        ${func.cleanNullString("ADRS_1")} AS adrs_1,
+        ${func.cleanNullString("ADRS_2")} AS adrs_2,
+        ${func.cleanNullString("ID_NUMBER")} AS id_number,
+        ${func.cleanNullString("ISSUE_LOCATION")} AS issue_location,
+        ${func.cleanNullString("USER_ID")} AS user_id,
+        ${func.cleanNullString("TRANSACTION_CD")} AS transaction_cd,
+        ${func.cleanNullString("BUSINESS_TYPE")} AS business_type,
+        ${func.cleanNullString("REMARKS")} AS remarks,
 
         -- 5. Date Parsing
-        ${func.parse_date("ISSUE_DATE")} AS issue_date,
-        ${func.parse_date("EXPIRE_DATE")} AS expire_date,
-        ${func.parse_date("ACCO_BEGIN_DATE")} AS acco_begin_date,
-        ${func.parse_date("ACCO_END_DATE")} AS acco_end_date,
-        ${func.parse_date("EXC_BEGIN_DATE")} AS exc_begin_date,
-        ${func.parse_date("CERT_BEGIN_DATE")} AS cert_begin_date,
+        ${func.parseDate("ISSUE_DATE")} AS issue_date,
+        ${func.parseDate("EXPIRE_DATE")} AS expire_date,
+        ${func.parseDate("ACCO_BEGIN_DATE")} AS acco_begin_date,
+        ${func.parseDate("ACCO_END_DATE")} AS acco_end_date,
+        ${func.parseDate("EXC_BEGIN_DATE")} AS exc_begin_date,
+        ${func.parseDate("CERT_BEGIN_DATE")} AS cert_begin_date,
 
         -- 6. Operational & Snapshot Metadata
         REG_DATE_TIME AS reg_date_time,
-        ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+        ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
         UPD_DATE_TIME AS upd_date_time,
-        ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+        ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id,
         InsertDate AS insert_date,
         InsertTime AS insert_time
     FROM ${ref("bronze", "BRKTBROKER")}

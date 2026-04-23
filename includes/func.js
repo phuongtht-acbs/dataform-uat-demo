@@ -4,16 +4,16 @@
  * Standardizes common "junk" strings to true NULL values.
  * Useful for Silver-Staging cleanup of fields like 'N/A' or 'NULL'.
  */
-function clean_null_string(col) {
-  const null_string = ["'NULL'", "'N/A'", "'NA'", "'#N/A'", "''"];
-  return `CASE WHEN TRIM(CAST(${col} AS STRING)) IN (${null_string.join(", ")}) THEN NULL ELSE ${col} END`;
+function cleanNullString(col) {
+  const nullString = ["'NULL'", "'N/A'", "'NA'", "'#N/A'", "''"];
+  return `CASE WHEN TRIM(CAST(${col} AS STRING)) IN (${nullString.join(", ")}) THEN NULL ELSE ${col} END`;
 }
 
 /**
  * Parses a string/int into a date while nullifying one or many dummy values.
  * Defaults to common legacy dummy dates if none are provided.
  */
-function parse_date(col, dummies = ['19000101', '00010101', '99991231']) {
+function parseDate(col, dummies = ['19000101', '00010101', '99991231']) {
   // Ensure dummies is always an array
   const dummyArray = Array.isArray(dummies) ? dummies : [dummies];
   
@@ -31,14 +31,37 @@ function parse_date(col, dummies = ['19000101', '00010101', '99991231']) {
  * Useful for creating Surrogate Keys.
  * @param {string[]} fields - Array of column names to be hashed.
  */
-function generate_hash(fields) {
+function generateHash(fields) {
   // Joins the array into a comma-separated string for the STRUCT
   const fieldList = fields.join(", ");
   return `SHA256(TO_JSON_STRING(STRUCT(${fieldList})))`;
 }
 
+/**
+ * Generates the current_dim CTE logic.
+ * @param {boolean} isIncremental - Result of incremental()
+ * @param {string} selfRef - Result of self()
+ * @param {Object[]} columns - Array of {name: string, type: string}
+ */
+function getCurrentDim(isIncremental, selfRef, columns) {
+  if (isIncremental) {
+    // Return standard selection from current table
+    const colList = columns.map(c => c.name).join(", ");
+    return `SELECT ${colList} FROM ${selfRef} WHERE is_current`;
+  }
+
+  // Return the dummy "empty" schema for the first run
+  const dummyCols = columns.map(c => {
+    // We assume is_current is handled separately or included in columns
+    return `CAST(NULL AS ${c.type}) AS ${c.name}`;
+  }).join(",\n                ");
+
+  return `(SELECT TRUE AS is_current, ${dummyCols} FROM (SELECT 1) WHERE 1=0)`;
+}
+
 module.exports = { 
-    clean_null_string, 
-    parse_date,
-    generate_hash
+    cleanNullString, 
+    parseDate,
+    generateHash,
+    getCurrentDim
 };

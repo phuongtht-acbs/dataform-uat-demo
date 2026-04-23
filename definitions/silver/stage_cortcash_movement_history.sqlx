@@ -73,50 +73,50 @@ pre_operations {
 WITH staging_data AS (
     SELECT
         -- 1. Keys & Identifiers
-        ${func.parse_date("ALLO_DATE")} AS allo_date,
+        ${func.parseDate("ALLO_DATE")} AS allo_date,
         CAST(REF_NO AS INT64) AS ref_no,
         CAST(DEL_CD AS INT64) = 9 AS is_deleted,
         CAST(CUST_CD AS INT64) AS cust_cd,
-        ${func.clean_null_string("CUST_NO")} AS cust_no,
+        ${func.cleanNullString("CUST_NO")} AS cust_no,
         CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
-        ${func.clean_null_string("SUB_ACCO_NO")} AS sub_acco_no,
+        ${func.cleanNullString("SUB_ACCO_NO")} AS sub_acco_no,
 
         -- 2. Transaction Details
-        ${func.parse_date("ENTRY_DATE")} AS entry_date,
+        ${func.parseDate("ENTRY_DATE")} AS entry_date,
         CAST(APPROVEMENT_ID AS INT64) AS approvement_id,
-        ${func.clean_null_string("GROUP_CATEGORY")} AS group_category,
-        ${func.clean_null_string("TASK_CD")} AS task_cd,
-        ${func.parse_date("SRC_DATE")} AS src_date,
+        ${func.cleanNullString("GROUP_CATEGORY")} AS group_category,
+        ${func.cleanNullString("TASK_CD")} AS task_cd,
+        ${func.parseDate("SRC_DATE")} AS src_date,
         CAST(SRC_NO AS INT64) AS src_no,
-        ${func.clean_null_string("SRC_TRANSACTION_CD")} AS src_transaction_cd,
-        ${func.clean_null_string("CURR_CD")} AS curr_cd,
+        ${func.cleanNullString("SRC_TRANSACTION_CD")} AS src_transaction_cd,
+        ${func.cleanNullString("CURR_CD")} AS curr_cd,
 
         -- 3. Amounts (Preserving Precision)
         CAST(BEGIN_AMOUNT AS NUMERIC) AS begin_amount,
         CAST(AMOUNT AS NUMERIC) AS amount,
-        ${func.clean_null_string("AMOUNT_TYPE")} AS amount_type,
+        ${func.cleanNullString("AMOUNT_TYPE")} AS amount_type,
         CAST(TRADE_TYPE AS INT64) AS trade_type,
         CAST(AFTER_AMOUNT AS NUMERIC) AS after_amount,
 
         -- 4. Status & Utility
-        ${func.clean_null_string("UTIL_CD")} AS util_cd,
+        ${func.cleanNullString("UTIL_CD")} AS util_cd,
         CAST(UTIL_CASH_ID AS INT64) AS util_cash_id,
         CAST(STATUS AS INT64) AS status,
-        ${func.clean_null_string("TRANSACTION_CD")} AS transaction_cd,
-        ${func.clean_null_string("INTERNAL_BALANCE_CODE")} AS internal_balance_code,
-        ${func.clean_null_string("DOC")} AS doc,
+        ${func.cleanNullString("TRANSACTION_CD")} AS transaction_cd,
+        ${func.cleanNullString("INTERNAL_BALANCE_CODE")} AS internal_balance_code,
+        ${func.cleanNullString("DOC")} AS doc,
 
         -- 5. Comments & Operational Audit
-        ${func.clean_null_string("REMARKS")} AS remarks,
-        ${func.clean_null_string("MEMO")} AS memo,
+        ${func.cleanNullString("REMARKS")} AS remarks,
+        ${func.cleanNullString("MEMO")} AS memo,
         APPROVED_DATE_TIME AS approved_date_time,
-        ${func.clean_null_string("APPROVED_USER_ID")} AS approved_user_id,
+        ${func.cleanNullString("APPROVED_USER_ID")} AS approved_user_id,
         REG_DATE_TIME AS reg_date_time,
-        ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+        ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
         UPD_DATE_TIME AS upd_date_time,
-        ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id
+        ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id
     FROM ${ref("bronze", "CORTCASH_MOVEMENT_HISTORY")}
-    WHERE ${func.parse_date("ALLO_DATE")} = target_date
+    WHERE ${func.parseDate("ALLO_DATE")} = target_date
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY ALLO_DATE, REF_NO 
         ORDER BY UPD_DATE_TIME DESC

@@ -91,30 +91,30 @@ WITH staging_data AS (
         CAST(STATUS AS INT64) AS status,
 
         -- String Cleaning
-        ${func.clean_null_string("CURR_CD")} AS curr_cd,
-        ${func.clean_null_string("SUB_ACCO_NO")} AS sub_acco_no,
-        ${func.clean_null_string("BANK_CD")} AS bank_cd,
-        ${func.clean_null_string("BANK_BRANCH_CD")} AS bank_branch_cd,
-        ${func.clean_null_string("BANK_ACCO_NUMBER")} AS bank_acco_number,
-        ${func.clean_null_string("BANK_ACCO_NAME")} AS bank_acco_name,
-        ${func.clean_null_string("BANK_ACCO_ID_NO")} AS bank_acco_id_no,
-        ${func.clean_null_string("CONTRACT_NO")} AS contract_no,
-        ${func.clean_null_string("BROKER_CD")} AS broker_cd,
-        ${func.clean_null_string("TRADE_ACCO_NO")} AS trade_acco_no,
-        ${func.clean_null_string("SOURCE_CD")} AS source_cd,
-        ${func.clean_null_string("SOURCE_SNAME")} AS source_sname,
-        ${func.clean_null_string("REMARKS")} AS remarks,
+        ${func.cleanNullString("CURR_CD")} AS curr_cd,
+        ${func.cleanNullString("SUB_ACCO_NO")} AS sub_acco_no,
+        ${func.cleanNullString("BANK_CD")} AS bank_cd,
+        ${func.cleanNullString("BANK_BRANCH_CD")} AS bank_branch_cd,
+        ${func.cleanNullString("BANK_ACCO_NUMBER")} AS bank_acco_number,
+        ${func.cleanNullString("BANK_ACCO_NAME")} AS bank_acco_name,
+        ${func.cleanNullString("BANK_ACCO_ID_NO")} AS bank_acco_id_no,
+        ${func.cleanNullString("CONTRACT_NO")} AS contract_no,
+        ${func.cleanNullString("BROKER_CD")} AS broker_cd,
+        ${func.cleanNullString("TRADE_ACCO_NO")} AS trade_acco_no,
+        ${func.cleanNullString("SOURCE_CD")} AS source_cd,
+        ${func.cleanNullString("SOURCE_SNAME")} AS source_sname,
+        ${func.cleanNullString("REMARKS")} AS remarks,
 
         -- Date Parsing
-        ${func.parse_date("OPEN_DATE")} AS open_date,
-        ${func.parse_date("CLOSE_DATE")} AS close_date,
-        ${func.parse_date("REOPEN_DATE")} AS reopen_date,
+        ${func.parseDate("OPEN_DATE")} AS open_date,
+        ${func.parseDate("CLOSE_DATE")} AS close_date,
+        ${func.parseDate("REOPEN_DATE")} AS reopen_date,
 
         -- Operational & Snapshot Metadata
         REG_DATE_TIME AS reg_date_time,
-        ${func.clean_null_string("REG_USER_ID")} AS reg_user_id,
+        ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
         UPD_DATE_TIME AS upd_date_time,
-        ${func.clean_null_string("UPD_USER_ID")} AS upd_user_id,
+        ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id,
         InsertDate AS insert_date,
         InsertTime AS insert_time
     FROM ${ref("bronze", "CORTSUB_ACCOUNT")}

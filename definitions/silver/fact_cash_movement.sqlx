@@ -1,3 +1,13 @@
+js {
+  // Define the columns that represent the "payload" of the Fact
+  const fact_cols = [
+    "allo_date", "ref_no", "is_deleted", "cust_cd", "cust_no", "sub_acco_cd", "sub_acco_no",
+    "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
+    "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
+    "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
+    "internal_balance_code", "doc", "remarks", "memo"
+  ];
+}
 config {
     type: "incremental",
     schema: "silver",
@@ -24,44 +34,8 @@ pre_operations {
 }
 WITH base_fact AS (
     SELECT
-        -- Keys & Identifiers
-        ${func.generate_hash(["'VGaia'", "CAST(allo_date AS STRING)", "CAST(ref_no AS STRING)"])} AS fact_cash_movement_key,
-        allo_date,
-        ref_no,
-        is_deleted,
-        cust_cd,
-        cust_no,
-        sub_acco_cd,
-        sub_acco_no,
-
-        -- Transaction Details
-        entry_date,
-        approvement_id,
-        group_category,
-        task_cd,
-        src_date,
-        src_no,
-        src_transaction_cd,
-        curr_cd,
-
-        -- Amounts
-        begin_amount,
-        amount,
-        amount_type,
-        trade_type,
-        after_amount,
-
-        -- Status & Utility
-        util_cd,
-        util_cash_id,
-        status,
-        transaction_cd,
-        internal_balance_code,
-        doc,
-
-        -- Comments
-        remarks,
-        memo
+        ${func.generateHash(["'VGaia'", "CAST(allo_date AS STRING)", "CAST(ref_no AS STRING)"])} AS fact_cash_movement_key,
+        ${fact_cols.join(",\n        ")}
     FROM ${ref("silver", "stage_cortcash_movement_history")}
     WHERE allo_date = target_date
 )

@@ -1,3 +1,23 @@
+js {
+  // 1. Danh sách cột trong bảng
+  const dim_cols = [
+    "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
+    "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
+    "issue_location", "issue_date", "expire_date", "user_id", "transaction_cd",
+    "acco_begin_date", "acco_end_date", "employee_type", "ctv_corp_id",
+    "acco_sts", "exc_begin_date", "cert_begin_date", "business_type",
+    "broker_type_id", "depend_number", "insurance_salary", "basic_salary",
+    "end_basic_salary_month", "remarks"
+  ];
+  // 2. Danh sách cột để tạo CTE current_dim
+  const cur_dim_cols = [
+    { name: "broker_cd", type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: "dim_broker_key", type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+}
+
 config {
     type: "incremental",
     schema: "silver",
@@ -23,70 +43,25 @@ pre_operations {
   );
 }
 
--- 1. Lấy dữ liệu từ Staging (Bỏ qua deduplication theo yêu cầu)
+-- 1. Lấy dữ liệu từ Staging
 WITH staging_data AS (
     SELECT
-        -- Hash để kiểm tra thay đổi nội dung
-        ${func.generate_hash([
-            "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
-            "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
-            "issue_location", "issue_date", "expire_date", "user_id", "transaction_cd",
-            "acco_begin_date", "acco_end_date", "employee_type", "ctv_corp_id",
-            "acco_sts", "exc_begin_date", "cert_begin_date", "business_type",
-            "broker_type_id", "depend_number", "insurance_salary", "basic_salary",
-            "end_basic_salary_month", "remarks"
-        ])} AS record_hash,
-        broker_cd,
-        is_deleted,
-        parent_broker_cd,
-        family_name,
-        given_name,
-        mobile_no,
-        email_adrs,
-        adrs_1,
-        adrs_2,
-        approval_cd,
-        id_number,
-        issue_location,
-        issue_date,
-        expire_date,
-        user_id,
-        transaction_cd,
-        acco_begin_date,
-        acco_end_date,
-        employee_type,
-        ctv_corp_id,
-        acco_sts,
-        exc_begin_date,
-        cert_begin_date,
-        business_type,
-        broker_type_id,
-        depend_number,
-        insurance_salary,
-        basic_salary,
-        end_basic_salary_month,
-        remarks
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${dim_cols.join(",\n        ")}
     FROM ${ref("silver", "stage_brktbroker")}
     WHERE insert_date = target_date
 ),
 
 -- 2. Xác định các bản ghi hiện tại trong Dimension
 current_dim AS (
-    SELECT
-        broker_cd, record_hash, dim_broker_key, _ingested_at
-    FROM
-        ${incremental() 
-            ? self() 
-            : `(SELECT TRUE AS is_current, CAST(NULL AS STRING) AS broker_cd, CAST(NULL AS BYTES) AS record_hash, CAST(NULL AS BYTES) AS dim_broker_key, CAST(NULL AS TIMESTAMP) AS _ingested_at FROM (SELECT 1) WHERE 1=0)`
-        }
-    WHERE is_current
+    ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
 )
 
 -- 3. Insert bản ghi mới hoặc bản ghi có thay đổi thông tin
 SELECT
     ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generate_hash(["stg.broker_cd", "CAST(target_date AS TIMESTAMP)"])} AS dim_broker_key,
+    ${func.generateHash(["stg.broker_cd", "CAST(target_date AS TIMESTAMP)"])} AS dim_broker_key,
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
     true AS is_current,
@@ -97,20 +72,13 @@ WHERE
     cur.broker_cd IS NULL 
     OR stg.record_hash != cur.record_hash
 
-post_operations { -- 4. Đóng record cũ khi có phiên bản mới
+post_operations {
+-- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
   USING (
     SELECT
         broker_cd,
-        ${func.generate_hash([
-            "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
-            "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
-            "issue_location", "issue_date", "expire_date", "user_id", "transaction_cd",
-            "acco_begin_date", "acco_end_date", "employee_type", "ctv_corp_id",
-            "acco_sts", "exc_begin_date", "cert_begin_date", "business_type",
-            "broker_type_id", "depend_number", "insurance_salary", "basic_salary",
-            "end_basic_salary_month", "remarks"
-        ])} AS record_hash
+        ${func.generateHash(dim_cols)} AS record_hash
     FROM ${ref("silver", "stage_brktbroker")}
     WHERE insert_date = target_date
   ) AS s
