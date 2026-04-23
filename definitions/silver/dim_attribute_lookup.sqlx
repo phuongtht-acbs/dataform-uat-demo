@@ -1,0 +1,72 @@
+js {
+  /**
+   * Consolidated Metadata from all Excel documentation.
+   * New categories added: CORTCASH_MOVEMENT (ACCOUNT_TYPE, TRADE_TYPE, STATUS).
+   */
+  const excel_metadata = {
+    // --- CORTCUSTOMER Metadata ---
+    "CORTCUSTOMER__CUST_TYPE": { 1: "Cá nhân", 2: "Tổ chức" },
+    "CORTCUSTOMER__FOREIGN_TYPE": { 1: "Trong nước", 2: "Nước ngoài" },
+    "CORTCUSTOMER__SEX": { 0: "Không", 1: "Nam", 2: "Nữ" },
+    "CORTCUSTOMER__ACCO_STS": { 1: "New", 2: "Sleeping", 3: "Active", 4: "Closed" },
+    "CORTCUSTOMER__VSD_STATUS": { 0: "Chưa gửi", 1: "Đã gửi", 2: "Xác nhận", 3: "Từ chối bởi VSD", 4: "Từ chối bởi Gate" },
+    "CORTCUSTOMER__CONTRACT_STATUS": { 0: "Chưa hoàn thiện", 1: "Đã hoàn thiện", 2: "Ngừng GD tạm thời", 3: "Chưa hoàn thiện & TK rỗng" },
+    "CORTCUSTOMER__APPROVAL_CD": { 1: "CMND", 2: "Passport", 3: "GPKD", 8: "CCCD" },
+    "CORTCUSTOMER__SRC_CHANNEL": { 1: "Back office", 2: "Online", 3: "Floor", 9: "Tel/CC" },
+
+    // --- CORTSUB_ACCOUNT Metadata ---
+    "CORTSUB_ACCOUNT__ACCO_TYPE": { 
+      1: "CASH", 2: "MARGIN", 3: "BANKING", 4: "SHORTSALE", 
+      5: "TK QUỸ MỞ", 6: "DERIVATIVES", 7: "OTHER", 9: "ALGOS" 
+    },
+    "CORTSUB_ACCOUNT__ACCO_STS": { 1: "Open", 2: "Close" },
+    "CORTSUB_ACCOUNT__STATUS": { 0: "Pending", 1: "Approved" },
+    "CORTSUB_ACCOUNT__SOURCE_CHANNEL": { 1: "Back Office", 2: "Front Office", 3: "Floor Trading" },
+    "CORTSUB_ACCOUNT__BANK_FLG": { 1: "Phong tỏa đầu ngày", 2: "Phong tỏa thủ công", 3: "Phong tỏa tự động", 4: "Đồng bộ số dư" },
+    "CORTSUB_ACCOUNT__ACCO_FLG": { 0: "Không mặc định", 1: "Mặc định" },
+
+    // --- BRKTBROKER Metadata ---
+    "BRKTBROKER__APPROVAL_CD": { 1: "ID Card", 2: "Passport", 3: "Driving Licence", 4: "Business Certificate", 9: "Other" },
+    "BRKTBROKER__ACCO_STS": { 1: "Open", 2: "Close" },
+    "BRKTBROKER__EMPLOYEE_TYPE": { 1: "Thử việc", 2: "Chính thức", 3: "CTV" },
+
+    // --- CORTCASH_MOVEMENT Metadata (New) ---
+    "CORTCASH_MOVEMENT__ACCOUNT_TYPE": { 1: "Cash", 2: "Margin" },
+    "CORTCASH_MOVEMENT__TRADE_TYPE": { 1: "Debit", 2: "Credit" },
+    "CORTCASH_MOVEMENT__STATUS": { 0: "Chưa duyệt", 1: "Đã duyệt", 9: "Đã hủy" }
+  };
+
+  /**
+   * Helper function to generate SQL rows.
+   * Forces category to UPPERCASE and code to INT64.
+   */
+  const get_metadata_rows = (metadata) => {
+    return Object.keys(metadata).flatMap(category =>
+      Object.entries(metadata[category]).map(([code, name]) =>
+        `SELECT '${category.toUpperCase()}' AS category, CAST(${code} AS INT64) AS attribute_code, '${name}' AS attribute_name`
+      )
+    ).join("\n  UNION ALL ");
+  }
+}
+
+config {
+    type: "table",
+    schema: "silver",
+    name: "dim_attribute_lookup",
+    description: "Bảng tra cứu mã và tên thuộc tính tập trung, được trích xuất từ tài liệu Excel.",
+    tags: ["silver", "dimension", "lookup"]
+}
+
+WITH raw_metadata AS (
+  ${get_metadata_rows(excel_metadata)}
+)
+
+SELECT
+  -- Generate a unique key for efficient joining
+  ${func.generateHash(["category", "CAST(attribute_code AS STRING)"])} AS attribute_key,
+  category,
+  attribute_code,
+  attribute_name,
+  CURRENT_TIMESTAMP() AS _updated_at
+FROM
+  raw_metadata
