@@ -1,0 +1,104 @@
+config {
+    type: "incremental",
+    schema: "gold",
+    name: "cash_movement",
+    description: "Denormalized Fact table for Cash Movements. Contains natural keys and history keys for temporal joins, excluding descriptive names.",
+    tags: ["gold", "cash_movement", "fact"],
+    uniqueKey: ["fact_cash_movement_key"],
+    bigquery: {
+        partitionBy: "allo_date"
+    }
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  -- Determine target_date from the Silver fact table to process the latest batch
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(allo_date) FROM ${ref("silver", "fact_cash_movement")})`
+    }
+  );
+}
+
+WITH staging_data AS (
+    SELECT
+        -- 1. Transactional Payload
+        f.fact_cash_movement_key,
+        f.allo_date,
+        f.ref_no,
+        f.entry_date,
+        f.approvement_id,
+        f.group_category,
+        f.task_cd,
+        f.src_date,
+        f.src_no,
+        f.src_transaction_cd,
+        f.curr_cd,
+        f.begin_amount,
+        f.amount,
+        f.amount_type,
+        f.after_amount,
+        f.util_cd,
+        f.util_cash_id,
+        f.transaction_cd,
+        f.internal_balance_code,
+        f.doc,
+        f.remarks,
+        f.memo,
+
+        -- 2. Resolved Status & Trade Types
+        lkp_trade.attribute_name AS trade_type_name,
+        lkp_sts.attribute_name AS status_name,
+
+        -- 3. Natural Keys & History Keys
+        -- Subaccount
+        f.sub_acco_no,
+        s.subaccount_history_key,
+        
+        -- Customer
+        f.cust_no,
+        c.customer_history_key,
+
+        -- Broker (Sourced from the Subaccount version active at transaction time)
+        s.broker_cd,
+        b.broker_history_key
+        
+    FROM ${ref("silver", "fact_cash_movement")} AS f
+    -- Resolve codes to names
+    LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_trade 
+        ON lkp_trade.category = 'CORTCASH_MOVEMENT__TRADE_TYPE' AND f.trade_type = lkp_trade.attribute_code
+    LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
+        ON lkp_sts.category = 'CORTCASH_MOVEMENT__STATUS' AND f.status = lkp_sts.attribute_code
+        
+    -- Temporal join with Subaccount history to find the version active on allo_date
+    LEFT JOIN ${ref("gold", "subaccount_history")} AS s
+        ON f.sub_acco_no = s.sub_acco_no 
+        AND f.allo_date >= DATE(s.valid_from) 
+        AND (s.valid_to IS NULL OR f.allo_date < DATE(s.valid_to))
+        
+    -- Temporal join with Customer history to find the version active on allo_date
+    LEFT JOIN ${ref("gold", "customer_history")} AS c
+        ON f.cust_no = c.cust_no 
+        AND f.allo_date >= DATE(c.valid_from) 
+        AND (c.valid_to IS NULL OR f.allo_date < DATE(c.valid_to))
+        
+    -- Temporal join with Broker history (based on the broker assigned to the subaccount)
+    LEFT JOIN ${ref("gold", "broker_history")} AS b
+        ON s.broker_cd = b.broker_cd 
+        AND f.allo_date >= DATE(b.valid_from) 
+        AND (b.valid_to IS NULL OR f.allo_date < DATE(b.valid_to))
+        
+    WHERE f.allo_date = target_date
+)
+
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.*
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target 
+    ON stg.fact_cash_movement_key = target.fact_cash_movement_key`
+)}
