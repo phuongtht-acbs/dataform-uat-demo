@@ -24,8 +24,8 @@ config {
         mortgage_avail_auto: "Tiền có thể Cầm cố tự động (Đồng bộ khi có lệnh khớp mua) (Mặc định: 0)",
         
         // Auto Services Flags
-        is_auto_advance: "Cờ đăng ký dịch vụ Ứng trước tự động (0: No, 1: Yes)",
-        is_auto_mortgage: "Cờ đăng ký dịch vụ Cầm cố tự động (0: No, 1: Yes)",
+        is_auto_advance: "Có đăng ký dịch vụ Ứng trước tự động",
+        is_auto_mortgage: "Có đăng ký dịch vụ Cầm cố tự động",
 
         // Margin Rates
         retention_rate: "Tỷ lệ duy trì tài khoản",
@@ -81,8 +81,8 @@ WITH staging_data AS (
     CAST(MORTGAGE_AVAIL_AUTO AS NUMERIC) AS mortgage_avail_auto,
 
     -- Service Flags
-    CAST(IS_AUTO_ADVANCE AS INT64) AS is_auto_advance,
-    CAST(IS_AUTO_MORTGAGE AS INT64) AS is_auto_mortgage,
+    CAST(IS_AUTO_ADVANCE AS INT64) = 1 AS is_auto_advance,
+    CAST(IS_AUTO_MORTGAGE AS INT64) = 1 AS is_auto_mortgage,
 
     -- Margin Rates
     CAST(RETENTION_RATE AS FLOAT64) AS retention_rate,
