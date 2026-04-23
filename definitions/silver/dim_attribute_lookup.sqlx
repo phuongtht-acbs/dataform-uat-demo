@@ -50,7 +50,7 @@ js {
 }
 
 config {
-    type: "table",
+    type: "view",
     schema: "silver",
     name: "dim_attribute_lookup",
     description: "Bảng tra cứu mã và tên thuộc tính tập trung, được trích xuất từ tài liệu Excel.",
