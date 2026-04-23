@@ -1,0 +1,58 @@
+config {
+    type: "table",
+    schema: "gold",
+    name: "customer",
+    description: "Current state of Customer profiles. Provides the latest denormalized snapshot for every customer.",
+    tags: ["gold", "customer", "current"]
+}
+
+SELECT
+  -- Unique Identifier
+  cust_no,
+
+  -- Personal & Contact Info
+  cust_family_name,
+  cust_given_name,
+  tax_code,
+  birthday,
+  mobile_no,
+  email_adrs,
+  email_flg,
+  country_cd,
+  job,
+
+  -- Detailed Attributes (Names)
+  cust_type_name,
+  foreign_type_name,
+  sex_name,
+  acco_sts_name,
+  vsd_status_name,
+  contract_status_name,
+  approval_cd_name,
+  src_channel_name,
+
+  -- Legal & Representative Info
+  pres_name,
+  pres_position,
+  id_number,
+  contract_no,
+  
+  -- Assigned Broker (Current version)
+  broker_cd,
+  broker_history_key,
+  broker_family_name,
+  broker_given_name,
+
+  -- Additional Fields
+  remarks,
+  sid,
+  pcod,
+
+  -- Metadata
+  valid_from AS effective_from_date,
+  _ingested_at,
+  _updated_at
+FROM
+  ${ref("gold", "customer_history")}
+WHERE
+  is_current = true

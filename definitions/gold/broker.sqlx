@@ -2,32 +2,57 @@ config {
     type: "table",
     schema: "gold",
     name: "broker",
-    description: "Current state of Broker information. This table provides the most recent version of each broker from the history table.",
+    description: "Current snapshot of Broker information. Provides the latest version of every field from the broker_history table.",
     tags: ["gold", "broker", "current"],
+    bigquery: {
+        labels: {
+            "layer": "gold",
+            "domain": "broker"
+        }
+    }
 }
 
 SELECT
-    -- Business Key
-    broker_cd,
-    
-    -- Denormalized Attributes
-    parent_broker_cd,
-    family_name,
-    given_name,
-    mobile_no,
-    email_adrs,
-    id_number,
-    user_id,
-    transaction_cd,
-    employee_type_name,
-    acco_sts_name,
-    approval_type_name,
-    basic_salary,
-    remarks,
+  -- Business Key
+  broker_cd,
 
-    -- Metadata & Timestamps
-    valid_from AS effective_from_date,
-    _ingested_at,
-    _updated_at
-FROM ${ref("gold", "broker_history")}
-WHERE is_current
+  -- Personal & Employment Info
+  parent_broker_cd,
+  family_name,
+  given_name,
+  mobile_no,
+  email_adrs,
+  adrs_1,
+  adrs_2,
+  id_number,
+  issue_location,
+  issue_date,
+  expire_date,
+  user_id,
+  transaction_cd,
+  acco_begin_date,
+  acco_end_date,
+  ctv_corp_id,
+  exc_begin_date,
+  cert_begin_date,
+  business_type,
+  broker_type_id,
+  depend_number,
+  insurance_salary,
+  basic_salary,
+  end_basic_salary_month,
+  remarks,
+
+  -- Readable Status Names
+  employee_type_name,
+  acco_sts_name,
+  approval_type_name,
+
+  -- Metadata
+  valid_from AS effective_from_date,
+  _ingested_at,
+  _updated_at
+FROM
+  ${ref("gold", "broker_history")}
+WHERE
+  is_current = true
