@@ -1,7 +1,7 @@
 js {
   // 1. Danh sách cột trong bảng
   const dim_cols = [
-    "cust_cd", "is_deleted", "transaction_cd", "cust_family_name", "cust_given_name",
+    "cust_no", "cust_cd", "is_deleted", "transaction_cd", "cust_family_name", "cust_given_name",
     "tax_code", "cust_type", "foreign_type", "birthday", "sex", "mobile_no",
     "email_adrs", "email_flg", "approval_cd", "id_number", "issue_location",
     "issue_date", "expire_date", "country_cd", "job", "broker_cd", "introducer_cd",
@@ -76,7 +76,8 @@ FROM staging_data AS stg
 LEFT JOIN current_dim AS cur ON stg.cust_no = cur.cust_no
 WHERE cur.cust_no IS NULL OR stg.record_hash != cur.record_hash
 
-post_operations {-- 4. Đóng record cũ khi có phiên bản mới
+post_operations {
+-- 4. Đóng record cũ khi có phiên bản mới
   MERGE ${self()} AS t
   USING (
     SELECT
