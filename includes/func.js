@@ -59,9 +59,25 @@ function getCurrentDim(isIncremental, selfRef, columns) {
   return `(SELECT TRUE AS is_current, ${dummyCols} FROM (SELECT 1) WHERE 1=0)`;
 }
 
+/**
+ * Standardizes temporal joins for SCD Type 2 history tables.
+ * @param {string} tableRef - The result of ref() for the target table.
+ * @param {string} alias - The alias for the joined table.
+ * @param {string} leftKey - The join key from the source (e.g., 'f.cust_no').
+ * @param {string} rightKey - The join key from the history table (e.g., 'cust_no').
+ * @param {string} dateCol - The date column to compare against valid_from/to.
+ */
+function joinHistory(tableRef, alias, leftKey, rightKey, dateCol) {
+  return `LEFT JOIN ${tableRef} AS ${alias}
+    ON ${leftKey} = ${alias}.${rightKey}
+    AND f.${dateCol} >= DATE(${alias}.valid_from)
+    AND (${alias}.valid_to IS NULL OR f.${dateCol} < DATE(${alias}.valid_to))`;
+}
+
 module.exports = { 
     cleanNullString, 
     parseDate,
     generateHash,
-    getCurrentDim
+    getCurrentDim,
+    joinHistory
 };
