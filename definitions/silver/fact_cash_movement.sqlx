@@ -1,7 +1,8 @@
 js {
   // 1. CẤU HÌNH NGUỒN DỮ LIỆU
+  const source_layer = "silver"
   const source_table = "stage_cortcash_movement_history";
-  const source_filter_col = "business_date";
+  const source_partition_col = "business_date";
   
   // 2. CẤU HÌNH LOGIC HASH KEY
   const hash_key_elements = ["'VGaia'", "allo_date", "ref_no"];
@@ -38,7 +39,7 @@ pre_operations {
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(${source_filter_col}) FROM ${ref("silver", source_table)})`
+      : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
     }
   );
 }
@@ -49,8 +50,8 @@ WITH base_fact AS (
             el.includes("'") ? el : `CAST(${el} AS STRING)`
         ))} AS ${hash_key_name},
         ${fact_cols.join(",\n        ")}
-    FROM ${ref("silver", source_table)}
-    WHERE ${source_filter_col} = target_date
+    FROM ${ref(source_layer, source_table)}
+    WHERE ${source_partition_col} = target_date
 )
 
 SELECT
