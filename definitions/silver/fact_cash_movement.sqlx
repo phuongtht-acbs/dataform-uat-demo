@@ -1,43 +1,56 @@
 js {
-  // Define the columns that represent the "payload" of the Fact
+  // 1. CẤU HÌNH NGUỒN DỮ LIỆU
+  const source_table = "stage_cortcash_movement_history";
+  const source_filter_col = "business_date";
+  
+  // 2. CẤU HÌNH LOGIC HASH KEY
+  const hash_key_elements = ["'VGaia'", "allo_date", "ref_no"];
+  const hash_key_name = "fact_cash_movement_key";
+
+  // 3. COLUMN DEFINITIONS
   const fact_cols = [
-    "allo_date", "ref_no", "is_deleted", "cust_cd", "cust_no", "sub_acco_cd", "sub_acco_no",
+    "business_date", "allo_date", "ref_no", "is_deleted", "cust_cd", "cust_no", "sub_acco_cd", "sub_acco_no",
     "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
     "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
     "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
     "internal_balance_code", "doc", "remarks", "memo"
   ];
 }
+
 config {
     type: "incremental",
     schema: "silver",
     name: "fact_cash_movement",
     description: "Bảng Fact lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
-    tags: ["silver", "fact", "daily", "cash"],
+    tags: ["silver", "fact", "daily", "cash_movement"],
     uniqueKey: ["fact_cash_movement_key"],
     bigquery: {
-        partitionBy: "allo_date"
+        partitionBy: "business_date"
     }
 }
 
 pre_operations {
   -- 1. Xác định thời gian chạy
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+
   -- 2. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(allo_date) FROM ${ref("silver", "stage_cortcash_movement_history")})`
+      : `(SELECT MAX(${source_filter_col}) FROM ${ref("silver", source_table)})`
     }
   );
 }
+
 WITH base_fact AS (
     SELECT
-        ${func.generateHash(["'VGaia'", "CAST(allo_date AS STRING)", "CAST(ref_no AS STRING)"])} AS fact_cash_movement_key,
+        ${func.generateHash(hash_key_elements.map(el => 
+            el.includes("'") ? el : `CAST(${el} AS STRING)`
+        ))} AS ${hash_key_name},
         ${fact_cols.join(",\n        ")}
-    FROM ${ref("silver", "stage_cortcash_movement_history")}
-    WHERE allo_date = target_date
+    FROM ${ref("silver", source_table)}
+    WHERE ${source_filter_col} = target_date
 )
 
 SELECT
@@ -46,6 +59,5 @@ SELECT
     stg.*
 FROM base_fact AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target 
-    ON stg.fact_cash_movement_key = target.fact_cash_movement_key`
+  `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name}`
 )}
