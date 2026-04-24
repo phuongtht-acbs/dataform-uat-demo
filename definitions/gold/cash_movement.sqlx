@@ -1,96 +1,82 @@
+js {
+  // 1. CẤU HÌNH NGUỒN DỮ LIỆU
+  const source_layer = "silver"
+  const source_table = "fact_cash_movement";
+  const source_partition_col = "business_date";
+  
+  // 2. CẤU HÌNH CỘT ĐỂ THỰC HIỆN JOIN KHI TẠO FOREIGN KEY TỪ CÁC ĐỐI TƯỢNG
+  const join_date_col = "business_date"
+
+  // 3. DANH SÁCH CÁC TRƯỜNG ĐƯỢC LẤY TỪ BẢNG FACT
+  const fact_cols = [
+    "business_date", "allo_date", "ref_no", "is_deleted", "cust_cd", "cust_no", "sub_acco_cd", "sub_acco_no",
+    "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
+    "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
+    "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
+    "internal_balance_code", "doc", "remarks", "memo"
+  ];
+}
+
 config {
     type: "incremental",
     schema: "gold",
     name: "cash_movement",
-    description: "Denormalized Fact table for Cash Movements. Contains natural keys and history keys for temporal joins, excluding descriptive names.",
+    description: "Bảng thông tin giao dịch tiền đã được denormalized.",
     tags: ["gold", "cash_movement", "fact"],
-    uniqueKey: ["fact_cash_movement_key"],
+    uniqueKey: ["cash_movement_key"],
     bigquery: {
-        partitionBy: "allo_date"
+        partitionBy: "business_date"
     }
 }
 
 pre_operations {
+  -- 1. Xác định thời gian chạy
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+
+  -- 2. Xác định target_date (Dùng business_date để optimize BigQuery partitions)
   DECLARE target_date DATE;
-  -- Determine target_date from the Silver fact table to process the latest batch
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(allo_date) FROM ${ref("silver", "fact_cash_movement")})`
+      : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
     }
   );
 }
 
 WITH staging_data AS (
     SELECT
-        -- 1. Transactional Payload
-        f.fact_cash_movement_key,
-        f.allo_date,
-        f.ref_no,
-        f.entry_date,
-        f.approvement_id,
-        f.group_category,
-        f.task_cd,
-        f.src_date,
-        f.src_no,
-        f.src_transaction_cd,
-        f.curr_cd,
-        f.begin_amount,
-        f.amount,
-        f.amount_type,
-        f.after_amount,
-        f.util_cd,
-        f.util_cash_id,
-        f.transaction_cd,
-        f.internal_balance_code,
-        f.doc,
-        f.remarks,
-        f.memo,
+        -- 1. Xác định key của bảng
+        f.fact_cash_movement_key as cash_movement_key,
 
-        -- 2. Resolved Status & Trade Types
+        -- 2. Các cột từ bảng fact
+        ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
+
+        -- 3. Giá trị của các attribte được đánh số
         lkp_trade.attribute_name AS trade_type_name,
         lkp_sts.attribute_name AS status_name,
 
-        -- 3. Natural Keys & History Keys
-        -- Subaccount
+        -- 4. Natural Keys & History Keys sau khi dùng joinHistory
         f.sub_acco_no,
         s.subaccount_history_key,
-        
-        -- Customer
         f.cust_no,
-        c.customer_history_key,
-
-        -- Broker (Sourced from the Subaccount version active at transaction time)
+        s.customer_history_key,
         s.broker_cd,
-        b.broker_history_key
+        s.broker_history_key
         
-    FROM ${ref("silver", "fact_cash_movement")} AS f
-    -- Resolve codes to names
+    FROM ${ref(source_layer, source_table)} AS f
+    
+    -- --- JOINS ---
+    -- 1. Join để tìm giá trị cho các attribute được đánh số
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_trade 
         ON lkp_trade.category = 'CORTCASH_MOVEMENT__TRADE_TYPE' AND f.trade_type = lkp_trade.attribute_code
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
         ON lkp_sts.category = 'CORTCASH_MOVEMENT__STATUS' AND f.status = lkp_sts.attribute_code
         
-    -- Temporal join with Subaccount history to find the version active on allo_date
-    LEFT JOIN ${ref("gold", "subaccount_history")} AS s
-        ON f.sub_acco_no = s.sub_acco_no 
-        AND f.allo_date >= DATE(s.valid_from) 
-        AND (s.valid_to IS NULL OR f.allo_date < DATE(s.valid_to))
-        
-    -- Temporal join with Customer history to find the version active on allo_date
-    LEFT JOIN ${ref("gold", "customer_history")} AS c
-        ON f.cust_no = c.cust_no 
-        AND f.allo_date >= DATE(c.valid_from) 
-        AND (c.valid_to IS NULL OR f.allo_date < DATE(c.valid_to))
-        
-    -- Temporal join with Broker history (based on the broker assigned to the subaccount)
-    LEFT JOIN ${ref("gold", "broker_history")} AS b
-        ON s.broker_cd = b.broker_cd 
-        AND f.allo_date >= DATE(b.valid_from) 
-        AND (b.valid_to IS NULL OR f.allo_date < DATE(b.valid_to))
-        
-    WHERE f.allo_date = target_date
+    -- 2. Dùng hàm joinHistory (ref_bảng, alias_bảng, left_key, right_key, join_date_col) để lấy ra foreign key của các đối tượng
+    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", join_date_col)}
+    
+    -- --- FILTER ---
+    WHERE f.${source_partition_col} = target_date
 )
 
 SELECT
@@ -99,6 +85,5 @@ SELECT
     stg.*
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target 
-    ON stg.fact_cash_movement_key = target.fact_cash_movement_key`
+  `LEFT JOIN ${self()} AS target ON stg.cash_movement_key = target.cash_movement_key`
 )}
