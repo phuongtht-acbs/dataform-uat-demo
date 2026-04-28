@@ -12,7 +12,7 @@ function cleanNullString(col) {
  * Nullifies dummy dates when the input column is already a DATE type.
  * Converts YYYYMMDD inputs to DATE 'YYYY-MM-DD' literals.
  */
-function cleanNullDate(col, dummies = ['19000101', '00010101', '99991231', '0']) {
+function cleanNullDate(col, dummies = ['19000101', '00010101', '99991231']) {
   const dummyArray = Array.isArray(dummies) ? dummies : [dummies];
   
   // Convert '19000101' -> "DATE '1900-01-01'"
@@ -30,7 +30,7 @@ function cleanNullDate(col, dummies = ['19000101', '00010101', '99991231', '0'])
 /**
  * Parses raw numeric/string data into a DATE, then cleans dummy values.
  */
-function parseNumericDate(col, dummies = ['19000101', '00010101', '99991231', '0']) {
+function parseNumericDate(col, dummies = ['19000101', '00010101', '99991231']) {
   const dateExpr = `SAFE.PARSE_DATE('%Y%m%d', CAST(${col} AS STRING))`;
   return cleanNullDate(dateExpr, dummies);
 }
