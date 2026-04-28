@@ -26,7 +26,8 @@ config {
     tags: ["gold", "broker", "history"],
     uniqueKey: ["broker_history_key"],
     bigquery: {
-        partitionBy: "DATE(valid_from)"
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
     }
 }
 

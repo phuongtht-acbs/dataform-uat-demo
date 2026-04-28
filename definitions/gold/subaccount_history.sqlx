@@ -29,7 +29,8 @@ config {
     tags: ["gold", "subaccount", "history"],
     uniqueKey: ["subaccount_history_key"],
     bigquery: {
-        partitionBy: "DATE(valid_from)"
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
     }
 }
 
