@@ -26,7 +26,8 @@ config {
     tags: ["silver", "fact", "daily", "cash_movement"],
     uniqueKey: ["fact_cash_movement_key"],
     bigquery: {
-        partitionBy: "business_date"
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
     }
 }
 
@@ -60,5 +61,5 @@ SELECT
     stg.*
 FROM base_fact AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name}`
+  `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name} and target.${source_partition_col} = target_date`
 )}
