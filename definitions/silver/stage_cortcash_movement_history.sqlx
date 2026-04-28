@@ -138,7 +138,7 @@ WITH staging_data AS (
     ].join(",\n        ")}
 
     FROM ${ref("bronze", source_table)}
-    WHERE source_partition_col = target_date
+    WHERE ${source_partition_col} = target_date
     
     -- De-duplicate dữ liệu
     QUALIFY ROW_NUMBER() OVER (
