@@ -61,7 +61,10 @@ config {
     schema: "silver",
     name: "stage_cortcash_movement_history",
     uniqueKey: ["_hash_key"],
-    bigquery: {partitionBy: "business_date"},
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+        },
     description: "Bảng Staging chuẩn hóa lịch sử giao dịch tiền của khách hàng từ hệ thống Core (CORTCASH_MOVEMENT_HISTORY). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo allo_date và ref_no.",
     tags: ["silver", "cash_movement", "daily"],
     columns: {
@@ -153,5 +156,5 @@ SELECT
     ${output_cols.map(col => `stg.${col}`).join(",\n    ")}
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key`
+  `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key AND target.${target_partition_col} = target_date`
 )}
