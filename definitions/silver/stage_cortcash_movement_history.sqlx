@@ -13,6 +13,11 @@ js {
     const target_partition_col = "business_date"
     
     // 3. NHÓM TRƯỜNG DỮ LIỆU
+    
+    const numeric_date_cols = [
+        
+        ];
+    
     const date_cols = [
         "ALLO_DATE", "ENTRY_DATE", "SRC_DATE"
         ];
@@ -40,14 +45,14 @@ js {
     // 4.XỬ LÝ BIẾN (không cần đụng vào)
     
     // Kiểm tra xem target_partition_col đã tồn tại trong date_cols chưa
-    const has_partition_col = date_cols.some(
-        col => col.toLowerCase() === target_partition_col.toLowerCase());
+    const has_partition_col = date_cols.some(col => col.toLowerCase() === target_partition_col.toLowerCase());
 
     // Danh sách tất cả các trường để select
     const output_cols = [
         "_hash_key",
         ...(has_partition_col ? [] : [target_partition_col]),
         ...date_cols,
+        ...numeric_date_cols,
         ...string_cols, 
         ...integer_cols, 
         ...numeric_cols, 
@@ -133,6 +138,7 @@ WITH staging_data AS (
 
         // Clean dữ liệu
         ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
         ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
         ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
         ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),

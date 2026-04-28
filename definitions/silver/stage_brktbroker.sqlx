@@ -1,146 +1,178 @@
+js {
+    // 1. THÔNG TIN NGUỒN TỪ BRONZE
+    const source_table = "BRKTBROKER";
+    const source_partition_col = "TRADE_DATE";
+    const unique_key_cols = ["BROKER_CD"];
+    const dedupe_order_by = [
+        { field: "InsertTime", sort: "DESC" },
+		{ field: "UPD_DATE_TIME", sort: "DESC" }
+    ];
+    
+    // 2. ĐẶT TÊN PARTITION CHO BẢNG NÀY (nhớ chỉnh ở block config):
+        //snapshot_date cho mấy bảng dùng InsertDate
+        //business_date cho mấy bảng chỉ có dữ liệu theo ngày làm việc
+    const target_partition_col = "snapshot_date"
+    
+    // 3. NHÓM TRƯỜNG DỮ LIỆU
+    const numeric_date_cols = [
+        "ISSUE_DATE", "EXPIRE_DATE", "ACCO_BEGIN_DATE", "ACCO_END_DATE",
+        "EXC_BEGIN_DATE", "CERT_BEGIN_DATE"
+        ];
+	  const date_cols = [
+        "TRADE_DATE"
+        ];
+    const boolean_cols = [
+        { source: "DEL_CD", field_name: "is_deleted", true_value: 9}
+        ];
+    const string_cols = [
+        "BROKER_CD", "PARENT_BROKER_CD", "FAMILY_NAME", "GIVEN_NAME", 
+        "MOBILE_NO", "EMAIL_ADRS", "ADRS_1", "ADRS_2", "ID_NUMBER", 
+        "ISSUE_LOCATION", "USER_ID", "TRANSACTION_CD", "BUSINESS_TYPE", 
+        "REMARKS", "REG_USER_ID", "UPD_USER_ID"
+        ];
+    const integer_cols = [
+        "APPROVAL_CD", "EMPLOYEE_TYPE", "CTV_CORP_ID", "DEPEND_NUMBER", 
+        "END_BASIC_SALARY_MONTH", "BROKER_TYPE_ID", "ACCO_STS"
+        ];
+    const numeric_cols = [
+        "INSURANCE_SALARY", "BASIC_SALARY"
+        ];
+    // Danh sách các trường không cần xử lý
+    const cleaned_cols = [
+        "REG_DATE_TIME", "UPD_DATE_TIME", "InsertDate", "InsertTime"
+        ];
+
+    //-----------------------------------------
+    // 4.XỬ LÝ BIẾN (không cần đụng vào)
+    
+    // Kiểm tra xem target_partition_col đã tồn tại trong date_cols chưa
+    const has_partition_col = date_cols.some(col => col.toLowerCase() === target_partition_col.toLowerCase());
+
+    // Danh sách tất cả các trường để select
+    const output_cols = [
+        "_hash_key",
+        ...(has_partition_col ? [] : [target_partition_col]),
+        ...date_cols,
+		    ...numeric_date_cols,
+        ...string_cols, 
+        ...integer_cols, 
+        ...numeric_cols, 
+        ...cleaned_cols,
+        ...boolean_cols.map(b => b.field_name)
+    ].map(col => col.toLowerCase());
+}
+
 config {
     type: "incremental",
     schema: "silver",
     name: "stage_brktbroker",
-    description: "Bảng Staging lưu trữ lịch sử snapshot thông tin môi giới. Dữ liệu được chuẩn hóa, parse ngày tháng và bảo toàn vết ingestion.",
-    tags: ["silver", "broker", "daily"],
-    uniqueKey: ["broker_cd", "insert_date"],
+    uniqueKey: ["_hash_key"],
     bigquery: {
-        partitionBy: "insert_date",
-    },
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
+        },
+    description: "Bảng Staging chuẩn hóa thông tin môi giới",
+    tags: ["silver", "broker", "daily"],
     columns: {
-        // Audit luồng Dataform
+        // Audit & Keys
+        _hash_key: "Khóa chính (Surrogate Key) của bản ghi Silver, sinh ra từ hash của broker_cd",
         _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
         _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
+        snapshot_date: "Ngày snapshot dữ liệu, lấy từ trade_date để làm trường partition",
 
-        // Primary Identifiers
+        // Dates
+        trade_date: "Ngày dữ liệu ghi nhận từ hệ thống nguồn",
+        issue_date: "Ngày cấp giấy tờ định danh",
+        expire_date: "Ngày hết hạn giấy tờ định danh",
+        acco_begin_date: "Ngày bắt đầu làm việc",
+        acco_end_date: "Ngày kết thúc làm việc/Ngày hết hạn",
+        exc_begin_date: "Ngày xét kinh nghiệm KPI",
+        cert_begin_date: "Ngày cấp chứng chỉ hành nghề",
+
+        // Identifiers & Personal Information
         broker_cd: "Mã nhân viên môi giới",
-        is_deleted: "Dữ liệu đã xóa hay chưa",
+        is_deleted: "Cờ đánh dấu dữ liệu đã bị xóa từ nguồn (9: Deleted)",
         parent_broker_cd: "Mã môi giới quản lý cấp trên (Mặc định: null)",
-        
-        // Personal Information
         family_name: "Họ nhân viên",
         given_name: "Tên nhân viên",
         mobile_no: "Số điện thoại di động",
         email_adrs: "Địa chỉ Email",
         adrs_1: "Địa chỉ thường trú 1",
         adrs_2: "Địa chỉ thường trú 2",
-        
-        // Identification
-        approval_cd: "Loại giấy tờ định danh (1: ID Card, 2: Passport, 3: Driving Licence, 4: Business Certificate, 9: Other)",
         id_number: "Số CMND/CCCD/Hộ chiếu",
         issue_location: "Nơi cấp giấy tờ định danh",
-        issue_date: "Ngày cấp giấy tờ định danh",
-        expire_date: "Ngày hết hạn giấy tờ định danh",
         
-        // Account & Employment Details
+        // Employment & Account Details
         user_id: "Tài khoản người dùng trên hệ thống (UserID)",
         transaction_cd: "Mã điểm giao dịch",
-        acco_begin_date: "Ngày bắt đầu làm việc",
-        acco_end_date: "Ngày kết thúc làm việc/Ngày hết hạn",
         employee_type: "Phân loại nhân viên (1: Thử việc, 2: Chính thức, 3: CTV)",
         ctv_corp_id: "ID mã quản lý tổ chức CTV (Áp dụng cho loại EMPLOYEE_TYPE = 3)",
         acco_sts: "Trạng thái tài khoản môi giới",
-        
-        // Professional Qualifications
-        exc_begin_date: "Ngày xét kinh nghiệm KPI",
-        cert_begin_date: "Ngày cấp chứng chỉ hành nghề",
+        approval_cd: "Loại giấy tờ định danh (1: ID Card, 2: Passport, 3: Driving Licence, 4: Business Certificate, 9: Other)",
         business_type: "Loại hình kinh doanh (Lưu ID dạng chuỗi: 1, 2)",
         broker_type_id: "Phân hệ môi giới",
-        
+
         // Compensation & Tax
         depend_number: "Số người phụ thuộc giảm trừ gia cảnh",
         insurance_salary: "Mức lương đóng bảo hiểm",
         basic_salary: "Mức lương cơ bản",
         end_basic_salary_month: "Tháng kết thúc nhận lương cơ bản (YYYYMM)",
-        
+
         // Technical Metadata
         remarks: "Ghi chú bổ sung",
         reg_date_time: "Thời gian đăng ký hệ thống",
         reg_user_id: "Mã người dùng đăng ký",
         upd_date_time: "Thời gian cập nhật hệ thống",
         upd_user_id: "Mã người dùng cập nhật",
-        insert_date: "Ngày snapshot dữ liệu từ nguồn",
-        insert_time: "Thời điểm snapshot dữ liệu"
+        insert_date: "Ngày snapshot dữ liệu từ nguồn (InsertDate)",
+        insert_time: "Thời điểm snapshot dữ liệu (InsertTime)"
     }
 }
 
 pre_operations {
-  -- 1. Xác định thời gian chạy
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  -- 2. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(TRADE_DATE) FROM ${ref("bronze", "BRKTBROKER")})`
-    }
+    SELECT 
+      ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `MAX(${source_partition_col}) FROM ${ref("bronze", source_table)}`
+      }
   );
 }
 
 WITH staging_data AS (
     SELECT
-        -- 1. Identifiers
-        ${func.cleanNullString("BROKER_CD")} AS broker_cd,
-        CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+    ${[
+        // Xác định key để join và partition field (nếu chưa có)
+        `${func.generateHash(unique_key_cols.map(c => `CAST(${c} AS STRING)`))} AS _hash_key`,
+        ...(has_partition_col ? [] : [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
 
-        -- 2. Numeric Status and ID Codes
-        CAST(APPROVAL_CD AS INT64) AS approval_cd,
-        CAST(EMPLOYEE_TYPE AS INT64) AS employee_type,
-        CAST(CTV_CORP_ID AS INT64) AS ctv_corp_id,
-        CAST(DEPEND_NUMBER AS INT64) AS depend_number,
-        CAST(END_BASIC_SALARY_MONTH AS INT64) AS end_basic_salary_month,
-        CAST(BROKER_TYPE_ID AS INT64) AS broker_type_id,
-        CAST(ACCO_STS AS INT64) AS acco_sts,
+        // Clean dữ liệu
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")}
 
-        -- 3. Financial Values
-        CAST(INSURANCE_SALARY AS FLOAT64) AS insurance_salary,
-        CAST(BASIC_SALARY AS FLOAT64) AS basic_salary,
-
-        -- 4. String Cleaning
-        ${func.cleanNullString("PARENT_BROKER_CD")} AS parent_broker_cd,
-        ${func.cleanNullString("FAMILY_NAME")} AS family_name,
-        ${func.cleanNullString("GIVEN_NAME")} AS given_name,
-        ${func.cleanNullString("MOBILE_NO")} AS mobile_no,
-        ${func.cleanNullString("EMAIL_ADRS")} AS email_adrs,
-        ${func.cleanNullString("ADRS_1")} AS adrs_1,
-        ${func.cleanNullString("ADRS_2")} AS adrs_2,
-        ${func.cleanNullString("ID_NUMBER")} AS id_number,
-        ${func.cleanNullString("ISSUE_LOCATION")} AS issue_location,
-        ${func.cleanNullString("USER_ID")} AS user_id,
-        ${func.cleanNullString("TRANSACTION_CD")} AS transaction_cd,
-        ${func.cleanNullString("BUSINESS_TYPE")} AS business_type,
-        ${func.cleanNullString("REMARKS")} AS remarks,
-
-        -- 5. Date Parsing
-        ${func.parseNumericDate("ISSUE_DATE")} AS issue_date,
-        ${func.parseNumericDate("EXPIRE_DATE")} AS expire_date,
-        ${func.parseNumericDate("ACCO_BEGIN_DATE")} AS acco_begin_date,
-        ${func.parseNumericDate("ACCO_END_DATE")} AS acco_end_date,
-        ${func.parseNumericDate("EXC_BEGIN_DATE")} AS exc_begin_date,
-        ${func.parseNumericDate("CERT_BEGIN_DATE")} AS cert_begin_date,
-
-        -- 6. Operational & Snapshot Metadata
-        REG_DATE_TIME AS reg_date_time,
-        ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
-        UPD_DATE_TIME AS upd_date_time,
-        ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id,
-        InsertDate AS insert_date,
-        InsertTime AS insert_time
-    FROM ${ref("bronze", "BRKTBROKER")}
-    WHERE TRADE_DATE = target_date
+    FROM ${ref("bronze", source_table)}
+    WHERE ${source_partition_col} = target_date
+    
+    -- De-duplicate dữ liệu
     QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY BROKER_CD 
-        ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+        PARTITION BY ${unique_key_cols.join(", ")} 
+        ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
     ) = 1
 )
 
 SELECT
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    stg.*,
+    ${output_cols.map(col => `stg.${col}`).join(",\n    ")}
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target 
-    ON stg.broker_cd = target.broker_cd AND stg.insert_date = target.insert_date`
+  `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key AND target.${target_partition_col} = target_date`
 )}

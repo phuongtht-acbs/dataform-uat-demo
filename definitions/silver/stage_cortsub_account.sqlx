@@ -1,17 +1,83 @@
+js {
+    // 1. THÔNG TIN NGUỒN TỪ BRONZE
+    const source_table = "CORTSUB_ACCOUNT";
+    const source_partition_col = "InsertDate";
+    const unique_key_cols = ["SUB_ACCO_CD"];
+    const dedupe_order_by = [
+        { field: "InsertTime", sort: "DESC" },
+        { field: "UPD_DATE_TIME", sort: "DESC" }
+    ];
+    
+    // 2. ĐẶT TÊN PARTITION CHO BẢNG NÀY
+    const target_partition_col = "snapshot_date";
+    
+    // 3. NHÓM TRƯỜNG DỮ LIỆU
+    const numeric_date_cols = [
+        "OPEN_DATE", "CLOSE_DATE", "REOPEN_DATE"
+    ];
+    
+    const date_cols = [];
+    
+    const boolean_cols = [
+        { source: "DEL_CD", field_name: "is_deleted", true_value: 9 }
+    ];
+    
+    const string_cols = [
+        "CURR_CD", "SUB_ACCO_NO", "BANK_CD", "BANK_BRANCH_CD", 
+        "BANK_ACCO_NUMBER", "BANK_ACCO_NAME", "BANK_ACCO_ID_NO", 
+        "CONTRACT_NO", "BROKER_CD", "TRADE_ACCO_NO", "SOURCE_CD", 
+        "SOURCE_SNAME", "REMARKS", "REG_USER_ID", "UPD_USER_ID"
+    ];
+    
+    const integer_cols = [
+        "SUB_ACCO_CD", "CUST_CD", "ALGOS_TYPE", "ACCO_TYPE", "TYPE_FLG", 
+        "NOT_UPDATE_BY_CUST", "BANK_FLG", "SOURCE_CHANNEL", "ACCO_STS", 
+        "ACCO_FLG", "STATUS"
+    ];
+    
+    const numeric_cols = [];
+    const float_cols = [];
+
+    const cleaned_cols = [
+        "REG_DATE_TIME", "UPD_DATE_TIME", "InsertTime", "InsertDate"
+    ];
+
+    //-----------------------------------------
+    // 4. XỬ LÝ BIẾN
+    
+    const has_partition_col = date_cols.some(col => col.toLowerCase() === target_partition_col.toLowerCase());
+
+    const output_cols = [
+        "_hash_key",
+        ...(has_partition_col ? [] : [target_partition_col]),
+        ...date_cols,
+        ...numeric_date_cols,
+        ...string_cols, 
+        ...integer_cols, 
+        ...numeric_cols, 
+        ...float_cols,
+        ...cleaned_cols,
+        ...boolean_cols.map(b => b.field_name)
+    ].map(col => col.toLowerCase());
+}
+
 config {
     type: "incremental",
     schema: "silver",
     name: "stage_cortsub_account",
-    description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
-    tags: ["silver", "subaccount", "daily"],
-    uniqueKey: ["sub_acco_cd", "insert_date"],
+    uniqueKey: ["_hash_key"],
     bigquery: {
-        partitionBy: "insert_date",
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
     },
+    description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp.",
+    tags: ["silver", "subaccount", "daily"],
     columns: {
-        // Audit luồng Dataform
+        // Audit & Keys
+        _hash_key: "Khóa chính (Surrogate Key) sinh ra từ hash của SUB_ACCO_CD",
         _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
         _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
+        snapshot_date: "Ngày snapshot dữ liệu (ánh xạ từ InsertDate)",
 
         // Keys & Identifiers
         sub_acco_cd: "Tự động tăng toàn bảng (Dùng để deduplicate)",
@@ -56,79 +122,56 @@ config {
         reg_user_id: "Người tạo bản ghi",
         upd_date_time: "Thời điểm cập nhật bản ghi",
         upd_user_id: "Người cập nhật bản ghi",
-        insert_date: "Ngày snapshot dữ liệu",
-        insert_time: "Thời điểm snapshot dữ liệu"
+        insertdate: "Ngày snapshot dữ liệu",
+        inserttime: "Thời điểm snapshot dữ liệu",
     }
 }
 
 pre_operations {
-  -- 1. Xác định thời gian chạy
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  -- 2. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(InsertDate) FROM ${ref("bronze", "CORTSUB_ACCOUNT")})`
-    }
+    SELECT 
+      ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `MAX(${source_partition_col}) FROM ${ref("bronze", source_table)}`
+      }
   );
 }
 
 WITH staging_data AS (
     SELECT
-        -- Identifiers and Numeric Statuses
-        CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
-        CAST(DEL_CD AS INT64) = 9 AS is_deleted,
-        CAST(CUST_CD AS INT64) AS cust_cd,
-        CAST(ALGOS_TYPE AS INT64) AS algos_type,
-        CAST(ACCO_TYPE AS INT64) AS acco_type,
-        CAST(TYPE_FLG AS INT64) AS type_flg,
-        CAST(NOT_UPDATE_BY_CUST AS INT64) AS not_update_by_cust,
-        CAST(BANK_FLG AS INT64) AS bank_flg,
-        CAST(SOURCE_CHANNEL AS INT64) AS source_channel,
-        CAST(ACCO_STS AS INT64) AS acco_sts,
-        CAST(ACCO_FLG AS INT64) AS acco_flg,
-        CAST(STATUS AS INT64) AS status,
+    ${[
+        // Xác định key để join và partition field (nếu chưa có)
+        `${func.generateHash(unique_key_cols.map(c => `CAST(${c} AS STRING)`))} AS _hash_key`,
+        ...(has_partition_col ? [] : [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
 
-        -- String Cleaning
-        ${func.cleanNullString("CURR_CD")} AS curr_cd,
-        ${func.cleanNullString("SUB_ACCO_NO")} AS sub_acco_no,
-        ${func.cleanNullString("BANK_CD")} AS bank_cd,
-        ${func.cleanNullString("BANK_BRANCH_CD")} AS bank_branch_cd,
-        ${func.cleanNullString("BANK_ACCO_NUMBER")} AS bank_acco_number,
-        ${func.cleanNullString("BANK_ACCO_NAME")} AS bank_acco_name,
-        ${func.cleanNullString("BANK_ACCO_ID_NO")} AS bank_acco_id_no,
-        ${func.cleanNullString("CONTRACT_NO")} AS contract_no,
-        ${func.cleanNullString("BROKER_CD")} AS broker_cd,
-        ${func.cleanNullString("TRADE_ACCO_NO")} AS trade_acco_no,
-        ${func.cleanNullString("SOURCE_CD")} AS source_cd,
-        ${func.cleanNullString("SOURCE_SNAME")} AS source_sname,
-        ${func.cleanNullString("REMARKS")} AS remarks,
+        // Clean dữ liệu
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...float_cols.map(col => `CAST(${col} AS FLOAT64) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")}
 
-        -- Date Parsing
-        ${func.parseNumericDate("OPEN_DATE")} AS open_date,
-        ${func.parseNumericDate("CLOSE_DATE")} AS close_date,
-        ${func.parseNumericDate("REOPEN_DATE")} AS reopen_date,
-
-        -- Operational & Snapshot Metadata
-        REG_DATE_TIME AS reg_date_time,
-        ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
-        UPD_DATE_TIME AS upd_date_time,
-        ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id,
-        InsertDate AS insert_date,
-        InsertTime AS insert_time
-    FROM ${ref("bronze", "CORTSUB_ACCOUNT")}
-    WHERE InsertDate = target_date
-    QUALIFY ROW_NUMBER() OVER ( PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) = 1
+    FROM ${ref("bronze", source_table)}
+    WHERE ${source_partition_col} = target_date
+    
+    -- Deduplicate dựa trên key duy nhất
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ${unique_key_cols.join(", ")} 
+        ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+    ) = 1
 )
 
 SELECT
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    stg.*,
+    ${output_cols.map(col => `stg.${col}`).join(",\n    ")}
 FROM staging_data AS stg
--- Chỉ join với chính nó khi đang chạy incremental
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target 
-    ON stg.sub_acco_cd = target.sub_acco_cd AND stg.insert_date = target.insert_date`
+  `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key AND target.${target_partition_col} = target_date`
 )}

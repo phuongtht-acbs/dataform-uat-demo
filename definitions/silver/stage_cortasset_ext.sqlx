@@ -1,123 +1,130 @@
+js {
+    // 1. THÔNG TIN NGUỒN TỪ BRONZE
+    const source_table = "CORTASSET_EXT";
+    const source_partition_col = "BUSINESS_DATE"; // Sử dụng BUSINESS_DATE làm cột phân vùng nguồn
+    const unique_key_cols = ["SUB_ACCO_CD"];
+    const dedupe_order_by = [
+        { field: "InsertTime", sort: "DESC" },
+        { field: "UPD_DATE_TIME", sort: "DESC" }
+    ];
+    
+    // 2. ĐẶT TÊN PARTITION CHO BẢNG NÀY
+    // business_date cho các bảng dữ liệu theo ngày làm việc/nghiệp vụ
+    const target_partition_col = "business_date";
+    
+    // 3. NHÓM TRƯỜNG DỮ LIỆU
+    const numeric_date_cols = [];
+    
+    const date_cols = [
+        "BUSINESS_DATE"
+    ];
+    
+    const boolean_cols = [
+        { source: "DEL_CD", field_name: "is_deleted", true_value: 9 },
+        { source: "IS_AUTO_ADVANCE", field_name: "is_auto_advance", true_value: 1 },
+        { source: "IS_AUTO_MORTGAGE", field_name: "is_auto_mortgage", true_value: 1 }
+    ];
+    
+    const string_cols = [
+        "MARGIN_BROKER_CD", "REG_USER_ID", "UPD_USER_ID"
+    ];
+    
+    const integer_cols = [
+        "SUB_ACCO_CD"
+    ];
+    
+    const numeric_cols = [
+        "CASH_PENDING_BLOCK_AMT", "CASH_PENDING_PAY_AMT", "SEC_PENDING_BLOCK_AMT", 
+        "SEC_MRG_PENDING_BLOCK_AMT", "ADVANCE_AVAIL", "REQUIRE_BOUGHT_UNPOST_AMT", 
+        "MORTGAGE_AVAIL_AUTO", "MARGIN_LIMIT_GRP", "MARGIN_LIMIT"
+    ];
+
+    const float_cols = [
+        "RETENTION_RATE", "TN_RATE", "MARGIN_RATE", "WARNING_RATE", 
+        "CALL_RATE", "WITHDRAW_RATE"
+    ];
+
+    const cleaned_cols = [
+        "REG_DATE_TIME", "UPD_DATE_TIME", "InsertDate", "InsertTime"
+    ];
+
+    //-----------------------------------------
+    // 4. XỬ LÝ BIẾN
+    
+    // Kiểm tra xem target_partition_col đã tồn tại trong date_cols chưa
+    const has_partition_col = date_cols.some(col => col.toLowerCase() === target_partition_col.toLowerCase());
+
+    const output_cols = [
+        "_hash_key",
+        ...(has_partition_col ? [] : [target_partition_col]),
+        ...date_cols,
+        ...numeric_date_cols,
+        ...string_cols, 
+        ...integer_cols, 
+        ...numeric_cols, 
+        ...float_cols,
+        ...cleaned_cols,
+        ...boolean_cols.map(b => b.field_name)
+    ].map(col => col.toLowerCase());
+}
+
 config {
-    type: "table",
+    type: "incremental",
     schema: "silver",
     name: "stage_cortasset_ext",
-    description: "Bảng Staging lưu trữ các thông tin mở rộng về tài sản theo subaccount từ hệ thống Core (CORTASSET_EXT). Thực hiện làm sạch dữ liệu, parse ngày tháng và loại bỏ trùng lặp theo sub_acco_cd.",
-    tags: ["silver", "subaccount", "daily"],
-    columns: {
-        // Audit luồng Dataform
-        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
-        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
-
-        // Identifiers & Dates
-        sub_acco_cd: "Mã định danh tiểu khoản (Dùng để deduplicate)",
-        business_date: "Ngày nghiệp vụ phát sinh dữ liệu",
-        is_deleted: "Dữ liệu đã xóa hay chưa",
-
-        // Cash & Margin Amounts
-        cash_pending_block_amt: "Tiền ghi giảm chờ duyệt (PENDING_AMOUNT) = Tiền 901 (Mặc định: 0)",
-        cash_pending_pay_amt: "Tiền chờ thanh toán (Ví dụ: Bảng kê mua PHT có hiệu lực) (Mặc định: 0)",
-        sec_pending_block_amt: "Tổng Giá trị Chứng khoán phong tỏa chờ duyệt (Mặc định: 0)",
-        sec_mrg_pending_block_amt: "Tổng Giá trị Chứng khoán Margin phong tỏa chờ duyệt (Mặc định: 0)",
-        advance_avail: "Tiền có thể ƯT chưa xét đăng ký dịch vụ (Tiền bán * Tỷ lệ ƯTTĐ) (Mặc định: 0)",
-        require_bought_unpost_amt: "Giá trị chứng khoán mua bằng tiền mặt chưa Thanh Toán (Mặc định: 0)",
-        mortgage_avail_auto: "Tiền có thể Cầm cố tự động (Đồng bộ khi có lệnh khớp mua) (Mặc định: 0)",
-        
-        // Auto Services Flags
-        is_auto_advance: "Có đăng ký dịch vụ Ứng trước tự động",
-        is_auto_mortgage: "Có đăng ký dịch vụ Cầm cố tự động",
-
-        // Margin Rates
-        retention_rate: "Tỷ lệ duy trì tài khoản",
-        tn_rate: "Tỷ lệ T+n (Ký quỹ)",
-        margin_rate: "Tỷ lệ Margin hiện tại",
-        warning_rate: "Tỷ lệ cảnh báo vi phạm",
-        call_rate: "Tỷ lệ gọi bổ sung ký quỹ (Margin Call)",
-        withdraw_rate: "Tỷ lệ có thể rút tiền",
-
-        // Limits & Brokers
-        margin_limit_grp: "Hạn mức Margin theo nhóm khách hàng",
-        margin_limit: "Tổng hạn mức Hợp đồng Margin (Mặc định: 0)",
-        margin_broker_cd: "Mã nhân viên môi giới quản lý Margin",
-
-        // Technical Metadata
-        reg_date_time: "Thời điểm đăng ký bản ghi",
-        reg_user_id: "Người tạo bản ghi",
-        upd_date_time: "Thời điểm cập nhật bản ghi",
-        upd_user_id: "Người cập nhật bản ghi",
-        insert_date: "Ngày snapshot dữ liệu",
-        insert_time: "Thời điểm snapshot dữ liệu"
-    }
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+    },
+    description: "Bảng Staging chuẩn hóa thông tin tài sản mở rộng (CORTASSET_EXT). Sử dụng business_date làm cột phân vùng chính.",
+    tags: ["silver", "subaccount", "daily"]
 }
 
 pre_operations {
-  -- 1. Xác định thời gian chạy
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  -- 2. Xác định target_date
   DECLARE target_date DATE;
   SET target_date = (
     SELECT 
       ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `MAX(BUSINESS_DATE) FROM ${ref("bronze", "CORTASSET_EXT")}`
+        : `MAX(${source_partition_col}) FROM ${ref("bronze", source_table)}`
       }
   );
 }
 
 WITH staging_data AS (
-  SELECT
-    -- Primary Keys & Dates
-    CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
-    ${func.cleanNullDate("BUSINESS_DATE")} AS business_date,
-    CAST(DEL_CD AS INT64) = 9 AS is_deleted,
+    SELECT
+    ${[
+        // Xác định key để join và partition field (nếu chưa có)
+        `${func.generateHash(unique_key_cols.map(c => `CAST(${c} AS STRING)`))} AS _hash_key`,
+        ...(has_partition_col ? [] : [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
 
-    -- Cash and Security Pending Amounts
-    CAST(CASH_PENDING_BLOCK_AMT AS NUMERIC) AS cash_pending_block_amt,
-    CAST(CASH_PENDING_PAY_AMT AS NUMERIC) AS cash_pending_pay_amt,
-    CAST(SEC_PENDING_BLOCK_AMT AS NUMERIC) AS sec_pending_block_amt,
-    CAST(SEC_MRG_PENDING_BLOCK_AMT AS NUMERIC) AS sec_mrg_pending_block_amt,
-    CAST(ADVANCE_AVAIL AS NUMERIC) AS advance_avail,
-    CAST(REQUIRE_BOUGHT_UNPOST_AMT AS NUMERIC) AS require_bought_unpost_amt,
-    CAST(MORTGAGE_AVAIL_AUTO AS NUMERIC) AS mortgage_avail_auto,
+        // Clean dữ liệu
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...float_cols.map(col => `CAST(${col} AS FLOAT64) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")}
 
-    -- Service Flags
-    CAST(IS_AUTO_ADVANCE AS INT64) = 1 AS is_auto_advance,
-    CAST(IS_AUTO_MORTGAGE AS INT64) = 1 AS is_auto_mortgage,
-
-    -- Margin Rates
-    CAST(RETENTION_RATE AS FLOAT64) AS retention_rate,
-    CAST(TN_RATE AS FLOAT64) AS tn_rate,
-    CAST(MARGIN_RATE AS FLOAT64) AS margin_rate,
-    CAST(WARNING_RATE AS FLOAT64) AS warning_rate,
-    CAST(CALL_RATE AS FLOAT64) AS call_rate,
-    CAST(WITHDRAW_RATE AS FLOAT64) AS withdraw_rate,
-
-    -- Margin Limits
-    CAST(MARGIN_LIMIT_GRP AS NUMERIC) AS margin_limit_grp,
-    CAST(MARGIN_LIMIT AS NUMERIC) AS margin_limit,
-
-    -- String cleaning
-    ${func.cleanNullString("MARGIN_BROKER_CD")} AS margin_broker_cd,
-    ${func.cleanNullString("REG_USER_ID")} AS reg_user_id,
-    ${func.cleanNullString("UPD_USER_ID")} AS upd_user_id,
-
-    -- Technical Metadata
-    REG_DATE_TIME AS reg_date_time,
-    UPD_DATE_TIME AS upd_date_time,
-    InsertDate AS insert_date,
-    InsertTime AS insert_time
-
-  FROM ${ref("bronze", "CORTASSET_EXT")}
-  WHERE InsertDate = target_date
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY SUB_ACCO_CD ORDER BY InsertTime DESC, UPD_DATE_TIME DESC) = 1
+    FROM ${ref("bronze", source_table)}
+    WHERE ${source_partition_col} = target_date
+    
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ${unique_key_cols.join(", ")} 
+        ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+    ) = 1
 )
 
 SELECT
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    stg.*
+    ${output_cols.map(col => `stg.${col}`).join(",\n    ")}
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target 
-    ON stg.sub_acco_cd = target.sub_acco_cd AND stg.insert_date = target.insert_date`
+  `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key AND target.${target_partition_col} = target_date`
 )}
