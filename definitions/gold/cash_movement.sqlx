@@ -4,12 +4,12 @@ js {
   const source_table = "fact_cash_movement";
   const source_partition_col = "business_date";
   
-  // 2. CẤU HÌNH CỘT ĐỂ THỰC HIỆN JOIN KHI TẠO FOREIGN KEY TỪ CÁC ĐỐI TƯỢNG
+  // 2. CỘT NGÀY ĐỂ THỰC HIỆN JOIN KHI TẠO FOREIGN KEY TỪ CÁC ĐỐI TƯỢNG
   const join_date_col = "business_date"
 
-  // 3. DANH SÁCH CÁC TRƯỜNG ĐƯỢC LẤY TỪ BẢNG FACT
+  // 3. DANH SÁCH CÁC TRƯỜNG ĐƯỢC LẤY TỪ BẢNG FACT (không bao gồm thông tin về các đối tượng)
   const fact_cols = [
-    "business_date", "allo_date", "ref_no", "is_deleted", "cust_cd", "cust_no", "sub_acco_cd", "sub_acco_no",
+    "business_date", "allo_date", "ref_no", "is_deleted",
     "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
     "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
     "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
