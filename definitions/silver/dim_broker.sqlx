@@ -26,7 +26,8 @@ config {
     tags: ["silver", "dimension", "daily", "broker"],
     uniqueKey: ["dim_broker_key"],
     bigquery: {
-        partitionBy: "DATE(valid_from)"
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
     }
 }
 

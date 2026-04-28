@@ -30,7 +30,8 @@ config {
     tags: ["silver", "dimension", "daily", "customer"],
     uniqueKey: ["dim_customer_key"],
     bigquery: {
-        partitionBy: "DATE(valid_from)"
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
     }
 }
 

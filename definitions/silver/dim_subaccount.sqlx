@@ -27,7 +27,8 @@ config {
     tags: ["silver", "dimension", "daily", "subaccount"],
     uniqueKey: ["dim_subaccount_key"],
     bigquery: {
-        partitionBy: "DATE(valid_from)"
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
     }
 }
 
