@@ -16,6 +16,8 @@ js {
     { name: "dim_broker_key", type: "BYTES" },
     { name: "_ingested_at", type: "TIMESTAMP" }
   ];
+  // 3. Source partition field
+  const source_partition_col = 'snapshot_date';
 }
 
 config {
@@ -39,7 +41,7 @@ pre_operations {
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(insert_date) FROM ${ref("silver", "stage_brktbroker")})`
+      : `(SELECT MAX(${source_partition_col}) FROM ${ref("silver", "stage_brktbroker")})`
     }
   );
 }
@@ -50,7 +52,7 @@ WITH staging_data AS (
         ${func.generateHash(dim_cols)} AS record_hash,
         ${dim_cols.join(",\n        ")}
     FROM ${ref("silver", "stage_brktbroker")}
-    WHERE insert_date = target_date
+    WHERE ${source_partition_col} = target_date
 ),
 
 -- 2. Xác định các bản ghi hiện tại trong Dimension
@@ -81,7 +83,7 @@ post_operations {
         broker_cd,
         ${func.generateHash(dim_cols)} AS record_hash
     FROM ${ref("silver", "stage_brktbroker")}
-    WHERE insert_date = target_date
+    WHERE ${source_partition_col} = target_date
   ) AS s
   ON t.broker_cd = s.broker_cd AND t.is_current AND t.record_hash != s.record_hash
   WHEN MATCHED THEN

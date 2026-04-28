@@ -17,6 +17,8 @@ js {
     { name: "dim_subaccount_key", type: "BYTES" },
     { name: "_ingested_at", type: "TIMESTAMP" }
   ];
+  // 3. Source partition field
+  const source_partition_col = 'snapshot_date';
 }
 
 config {
@@ -42,9 +44,9 @@ pre_operations {
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
       : `(
           SELECT MAX(max_date) FROM (
-            SELECT MAX(insert_date) AS max_date FROM ${ref("silver", "stage_cortsub_account")}
+            SELECT MAX(${source_partition_col}) AS max_date FROM ${ref("silver", "stage_cortsub_account")}
             UNION ALL
-            SELECT MAX(insert_date) AS max_date FROM ${ref("silver", "stage_cortasset_ext")}
+            SELECT MAX(business_date) AS max_date FROM ${ref("silver", "stage_cortasset_ext")}
           )
         )`
     }
@@ -58,8 +60,8 @@ WITH staging_data AS (
         ${dim_cols.join(",\n        ")}
     FROM ${ref("silver", "stage_cortsub_account")} AS s
     LEFT JOIN ${ref("silver", "stage_cortasset_ext")} AS a 
-        ON s.sub_acco_cd = a.sub_acco_cd AND a.insert_date = target_date
-    WHERE s.insert_date = target_date
+        ON s.sub_acco_cd = a.sub_acco_cd AND a.business_date = target_date
+    WHERE s.${source_partition_col} = target_date
     -- Deduplicate logic
     QUALIFY ROW_NUMBER() OVER (PARTITION BY s.sub_acco_no ORDER BY s.sub_acco_cd DESC) = 1
 ),
@@ -91,8 +93,8 @@ post_operations {
         ${func.generateHash([dim_cols])} AS record_hash,
     FROM ${ref("silver", "stage_cortsub_account")} AS s
     LEFT JOIN ${ref("silver", "stage_cortasset_ext")} AS a 
-        ON s.sub_acco_cd = a.sub_acco_cd AND a.insert_date = target_date
-    WHERE s.insert_date = target_date
+        ON s.sub_acco_cd = a.sub_acco_cd AND a.business_date = target_date
+    WHERE s.${source_partition_col} = target_date
     QUALIFY ROW_NUMBER() OVER (PARTITION BY s.sub_acco_no ORDER BY s.sub_acco_cd DESC) = 1
   ) AS src
   ON t.sub_acco_no = src.sub_acco_no
