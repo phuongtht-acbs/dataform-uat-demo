@@ -144,16 +144,16 @@ WITH staging_data AS (
         ${func.cleanNullString("PCOD")} AS pcod,
 
         -- 4. Date Parsing
-        ${func.parseDate("BIRTHDAY")} AS birthday,
-        ${func.parseDate("ISSUE_DATE")} AS issue_date,
-        ${func.parseDate("EXPIRE_DATE")} AS expire_date,
-        ${func.parseDate("PRES_BIRTHDAY")} AS pres_birthday,
-        ${func.parseDate("PRES_ISSUE_DATE")} AS pres_issue_date,
-        ${func.parseDate("PRES_EXPIRE_DATE")} AS pres_expire_date,
-        ${func.parseDate("ACCO_ACT_DATE")} AS acco_act_date,
-        ${func.parseDate("ACCO_STS_DATE")} AS acco_sts_date,
-        ${func.parseDate("ACCO_STR_DATE")} AS acco_str_date,
-        ${func.parseDate("CONTRACT_COMPLETE_DATE")} AS contract_complete_date,
+        ${func.parseNumericDate("BIRTHDAY")} AS birthday,
+        ${func.parseNumericDate("ISSUE_DATE")} AS issue_date,
+        ${func.parseNumericDate("EXPIRE_DATE")} AS expire_date,
+        ${func.parseNumericDate("PRES_BIRTHDAY")} AS pres_birthday,
+        ${func.parseNumericDate("PRES_ISSUE_DATE")} AS pres_issue_date,
+        ${func.parseNumericDate("PRES_EXPIRE_DATE")} AS pres_expire_date,
+        ${func.parseNumericDate("ACCO_ACT_DATE")} AS acco_act_date,
+        ${func.parseNumericDate("ACCO_STS_DATE")} AS acco_sts_date,
+        ${func.parseNumericDate("ACCO_STR_DATE")} AS acco_str_date,
+        ${func.parseNumericDate("CONTRACT_COMPLETE_DATE")} AS contract_complete_date,
 
         -- 5. Operational & Snapshot Metadata
         REG_DATE_TIME AS reg_date_time,

@@ -68,7 +68,7 @@ WITH staging_data AS (
   SELECT
     -- Primary Keys & Dates
     CAST(SUB_ACCO_CD AS INT64) AS sub_acco_cd,
-    ${func.parseDate("BUSINESS_DATE")} AS business_date,
+    ${func.cleanNullDate("BUSINESS_DATE")} AS business_date,
     CAST(DEL_CD AS INT64) = 9 AS is_deleted,
 
     -- Cash and Security Pending Amounts

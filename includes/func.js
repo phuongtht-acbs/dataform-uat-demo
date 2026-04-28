@@ -8,22 +8,31 @@ function cleanNullString(col) {
   const nullString = ["'NULL'", "'N/A'", "'NA'", "'#N/A'", "''"];
   return `CASE WHEN TRIM(CAST(${col} AS STRING)) IN (${nullString.join(", ")}) THEN NULL ELSE ${col} END`;
 }
-
 /**
- * Parses a string/int into a date while nullifying one or many dummy values.
- * Defaults to common legacy dummy dates if none are provided.
+ * Nullifies dummy dates when the input column is already a DATE type.
+ * Converts YYYYMMDD inputs to DATE 'YYYY-MM-DD' literals.
  */
-function parseDate(col, dummies = ['19000101', '00010101', '99991231']) {
-  // Ensure dummies is always an array
+function cleanNullDate(col, dummies = ['19000101', '00010101', '99991231', '0']) {
   const dummyArray = Array.isArray(dummies) ? dummies : [dummies];
   
-  // Format them for SQL: ['19000101'] -> "'19000101'"
-  const formattedDummies = dummyArray.map(d => `'${d}'`).join(", ");
+  // Convert '19000101' -> "DATE '1900-01-01'"
+  const formattedDummies = dummyArray.map(d => {
+    const s = String(d);
+    const iso = `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
+    return `DATE '${iso}'`;
+  }).join(", ");
 
-  return `SAFE.PARSE_DATE('%Y%m%d', CASE 
-            WHEN CAST(${col} AS STRING) IN (${formattedDummies}) THEN NULL 
-            ELSE CAST(${col} AS STRING) 
-          END)`;
+  return `CASE 
+            WHEN ${col} IN (${formattedDummies}) THEN NULL 
+            ELSE ${col} 
+          END`;
+}
+/**
+ * Parses raw numeric/string data into a DATE, then cleans dummy values.
+ */
+function parseNumericDate(col, dummies = ['19000101', '00010101', '99991231', '0']) {
+  const dateExpr = `SAFE.PARSE_DATE('%Y%m%d', CAST(${col} AS STRING))`;
+  return cleanNullDate(dateExpr, dummies);
 }
 
 /**
@@ -76,7 +85,8 @@ function joinHistory(tableRef, alias, leftKey, rightKey, dateCol) {
 
 module.exports = { 
     cleanNullString, 
-    parseDate,
+    cleanNullDate,
+    parseNumericDate,
     generateHash,
     getCurrentDim,
     joinHistory

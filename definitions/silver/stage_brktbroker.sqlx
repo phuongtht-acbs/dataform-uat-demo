@@ -113,12 +113,12 @@ WITH staging_data AS (
         ${func.cleanNullString("REMARKS")} AS remarks,
 
         -- 5. Date Parsing
-        ${func.parseDate("ISSUE_DATE")} AS issue_date,
-        ${func.parseDate("EXPIRE_DATE")} AS expire_date,
-        ${func.parseDate("ACCO_BEGIN_DATE")} AS acco_begin_date,
-        ${func.parseDate("ACCO_END_DATE")} AS acco_end_date,
-        ${func.parseDate("EXC_BEGIN_DATE")} AS exc_begin_date,
-        ${func.parseDate("CERT_BEGIN_DATE")} AS cert_begin_date,
+        ${func.parseNumericDate("ISSUE_DATE")} AS issue_date,
+        ${func.parseNumericDate("EXPIRE_DATE")} AS expire_date,
+        ${func.parseNumericDate("ACCO_BEGIN_DATE")} AS acco_begin_date,
+        ${func.parseNumericDate("ACCO_END_DATE")} AS acco_end_date,
+        ${func.parseNumericDate("EXC_BEGIN_DATE")} AS exc_begin_date,
+        ${func.parseNumericDate("CERT_BEGIN_DATE")} AS cert_begin_date,
 
         -- 6. Operational & Snapshot Metadata
         REG_DATE_TIME AS reg_date_time,

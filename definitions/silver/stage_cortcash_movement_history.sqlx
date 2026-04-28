@@ -126,10 +126,10 @@ WITH staging_data AS (
     ${[
         // Xác định key để join và partition field (nếu chưa có)
         `${func.generateHash(unique_key_cols.map(c => `CAST(${c} AS STRING)`))} AS _hash_key`,
-        ...(has_partition_col ? [] : [`${func.parseDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
+        ...(has_partition_col ? [] : [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
 
         // Clean dữ liệu
-        ...date_cols.map(col => `${func.parseDate(col)} AS ${col.toLowerCase()}`),
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
         ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
         ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
         ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),

@@ -106,9 +106,9 @@ WITH staging_data AS (
         ${func.cleanNullString("REMARKS")} AS remarks,
 
         -- Date Parsing
-        ${func.parseDate("OPEN_DATE")} AS open_date,
-        ${func.parseDate("CLOSE_DATE")} AS close_date,
-        ${func.parseDate("REOPEN_DATE")} AS reopen_date,
+        ${func.parseNumericDate("OPEN_DATE")} AS open_date,
+        ${func.parseNumericDate("CLOSE_DATE")} AS close_date,
+        ${func.parseNumericDate("REOPEN_DATE")} AS reopen_date,
 
         -- Operational & Snapshot Metadata
         REG_DATE_TIME AS reg_date_time,
