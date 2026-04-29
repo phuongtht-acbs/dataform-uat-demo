@@ -32,17 +32,30 @@ config {
 }
 
 pre_operations {
-  -- 1. Xác định thời gian chạy
+  -- 1. Declare biến
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-
-  -- 2. Xác định target_date
   DECLARE target_date DATE;
-  SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-    }
-  );
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+
+  -- 2. Xác định target_date, start_date, end_date
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };`
+    : `SET start_date = ${dataform.projectConfig.vars.start_date 
+        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
+        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+      SET end_date = ${dataform.projectConfig.vars.end_date 
+        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+      SET target_date = NULL;`
+  }
+  -- 3. Xử lý Drop table khi full refresh để tránh lỗi schema thay đổi
+  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
 }
 
 WITH base_fact AS (
@@ -52,7 +65,12 @@ WITH base_fact AS (
         ))} AS ${hash_key_name},
         ${fact_cols.join(",\n        ")}
     FROM ${ref(source_layer, source_table)}
-    WHERE ${source_partition_col} = target_date
+    WHERE 
+        -- Switch between single date (incremental) and date range (full refresh)
+        ${incremental() 
+          ? `${source_partition_col} = target_date` 
+          : `${source_partition_col} BETWEEN start_date AND end_date`
+        }
 )
 
 SELECT

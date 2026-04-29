@@ -4,3 +4,5 @@ defaultAssertionDataset: dataform_assertions
 dataformCoreVersion: 3.0.37
 vars:
   target_date: ''
+  start_date: ''
+  end_date: ''
