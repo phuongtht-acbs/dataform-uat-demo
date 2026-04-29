@@ -55,13 +55,31 @@ config {
 }
 
 pre_operations {
+  -- 1. Khai báo biến
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
-  SET target_date = (
-    SELECT ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `MAX(${source_partition_col}) FROM ${ref("bronze", source_table)}`}
-  );
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+
+  -- 2. Logic xác định thời gian dựa trên loại hình chạy
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref("bronze", source_table)})`
+      };`
+    : `SET start_date = ${dataform.projectConfig.vars.start_date 
+        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
+        : `(SELECT MIN(${source_partition_col}) FROM ${ref("bronze", source_table)})`
+      };
+      SET end_date = ${dataform.projectConfig.vars.end_date 
+        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref("bronze", source_table)})`
+      };
+      SET target_date = NULL; -- Đảm bảo updatePartitionFilter không bị lỗi khi biên dịch`
+  }
+
+  -- 3. Drop table khi Full Refresh
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
 WITH staging_data AS (
@@ -77,7 +95,11 @@ WITH staging_data AS (
         ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
     ].join(",\n        ")}
     FROM ${ref("bronze", source_table)}
-    WHERE ${source_partition_col} = target_date
+    WHERE
+        ${incremental() 
+          ? `${source_partition_col} = target_date` 
+          : `${source_partition_col} BETWEEN start_date AND end_date`
+        }
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY ${unique_key_cols.join(", ")} 
         ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
