@@ -1,0 +1,56 @@
+js {
+  // Define the date range for your dimension
+  const start_date = '2020-01-01';
+  const end_date = '2030-12-31';
+}
+
+config {
+    type: "table",
+    schema: "silver",
+    name: "dim_date",
+    description: "Date dimension integrated with an external sheet for holidays and days off in lieu.",
+    tags: ["silver", "dimension"],
+    columns: {
+        date_key: "Primary Key (Hash of the date string)",
+        date: "The actual date value",
+        is_holiday: "True if the date exists in the sheet_non_business_day table",
+        holiday_reason: "The reason for the day off (e.g., 'National Day', 'Lieu Day')",
+        is_business_day: "True if the day is a weekday AND not found in the non-business day sheet"
+    }
+}
+
+WITH date_series AS (
+  -- Generate a continuous range of dates
+  SELECT day, EXTRACT(DAYOFWEEK FROM day) AS dow
+  FROM UNNEST(GENERATE_DATE_ARRAY(DATE('${start_date}'), DATE('${end_date}'))) AS day
+)
+
+SELECT
+  -- Generate the Surrogate Key using the project's standard hash function
+  ${func.generateHash(["CAST(s.day AS STRING)"])} AS date_key,
+  
+  s.day AS date,
+  -- Calendar attributes
+  EXTRACT(YEAR FROM s.day) AS year,
+  EXTRACT(MONTH FROM s.day) AS month,
+  EXTRACT(DAY FROM s.day) AS day_of_month,
+  FORMAT_DATE('%B', s.day) AS month_name,
+  FORMAT_DATE('%A', s.day) AS day_name,
+  
+  -- Holiday Logic from External Sheet
+  IF(nbd.date IS NOT NULL, true, false) AS is_holiday,
+  nbd.reason AS holiday_reason,
+  
+  -- Weekend Logic (BigQuery: 1=Sunday, 7=Saturday)
+  IF(s.dow IN (1, 7), true, false) AS is_weekend,
+  
+  -- Business Day Logic
+  -- A business day is a day that is NOT a weekend AND NOT in the non-business day sheet
+  CASE 
+    WHEN s.dow NOT IN (1, 7) AND nbd.date IS NULL THEN true
+    ELSE false 
+  END AS is_business_day,
+
+  CURRENT_TIMESTAMP() AS _updated_at
+FROM date_series s
+LEFT JOIN ${ref("bronze", "sheet_non_business_day")} nbd ON s.day = nbd.date
