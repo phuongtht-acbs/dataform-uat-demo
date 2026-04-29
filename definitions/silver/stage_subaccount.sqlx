@@ -1,0 +1,82 @@
+js {
+  // 1. Core Subaccount Columns
+  const sub_account_cols = [
+    "sub_acco_cd", "sub_acco_no", "is_deleted", "cust_cd", "acco_type", "algos_type",
+    "type_flg", "curr_cd", "bank_cd", "bank_branch_cd", "bank_acco_number",
+    "bank_acco_name", "bank_acco_id_no", "bank_flg", "not_update_by_cust",
+    "contract_no", "source_channel", "broker_cd", "acco_sts", "acco_flg",
+    "trade_acco_no", "status", "source_cd", "source_sname", "open_date",
+    "close_date", "reopen_date", "remarks", "reg_date_time", "reg_user_id",
+    "upd_date_time", "upd_user_id"
+  ];
+
+  // 2. Asset/Margin Extension Columns
+  const asset_ext_cols = [
+    "is_auto_advance", "is_auto_mortgage", "retention_rate", "warning_rate",
+    "tn_rate", "call_rate", "withdraw_rate", "margin_limit_grp", "margin_limit"
+  ];
+}
+
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_subaccount",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
+    },
+    description: "Consolidated Subaccount staging. Uses 'As-Of' logic to join core snapshots with the latest available asset extensions.",
+    tags: ["silver", "subaccount", "daily"]
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  DECLARE latest_asset_date DATE;
+
+  -- 1. Determine the target snapshot date
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(snapshot_date) FROM ${ref("silver", "stage_cortsub_account")})`
+    }
+  );
+
+  -- 2. Determine the latest available asset date (As-Of logic)
+  -- This handles non-business days and technical missing data by looking back
+  SET latest_asset_date = (
+    SELECT MAX(business_date) 
+    FROM ${ref("silver", "stage_cortasset_ext")} 
+    WHERE business_date <= target_date
+  );
+}
+
+WITH base_sub_account AS (
+    -- Get the core snapshot for the target date
+    SELECT 
+        * FROM ${ref("silver", "stage_cortsub_account")}
+    WHERE snapshot_date = target_date
+),
+
+asset_extension AS (
+    -- Get the extension record as of the latest available business date
+    SELECT 
+        * FROM ${ref("silver", "stage_cortasset_ext")}
+    WHERE business_date = latest_asset_date
+)
+
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    -- Target Date is the snapshot_date for partitioning
+    s.snapshot_date,
+    -- Join result
+    s._hash_key,
+    ${sub_account_cols.map(c => `s.${c}`).join(",\n    ")},
+    ${asset_ext_cols.map(c => `a.${c}`).join(",\n    ")}
+FROM base_sub_account AS s
+LEFT JOIN asset_extension AS a ON s.sub_acco_cd = a.sub_acco_cd
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON s._hash_key = target._hash_key AND target.snapshot_date = target_date`
+)}
