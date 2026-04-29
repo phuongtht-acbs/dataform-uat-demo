@@ -6,7 +6,7 @@ js {
   
   // 2. CẤU HÌNH LOGIC HASH KEY
   const hash_key_elements = ["'VGaia'", "allo_date", "ref_no"];
-  const hash_key_name = "fact_cash_movement_key";
+  const hash_key_name = "cash_movement_key";
 
   // 3. COLUMN DEFINITIONS
   const fact_cols = [
@@ -24,7 +24,7 @@ config {
     name: "fact_cash_movement",
     description: "Bảng Fact lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
     tags: ["silver", "fact", "daily", "cash_movement"],
-    uniqueKey: ["fact_cash_movement_key"],
+    uniqueKey: ["cash_movement_key"],
     bigquery: {
         partitionBy: "business_date",
         updatePartitionFilter: "business_date = target_date"

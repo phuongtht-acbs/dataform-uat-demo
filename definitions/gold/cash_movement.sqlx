@@ -6,8 +6,12 @@ js {
   
   // 2. CỘT NGÀY ĐỂ THỰC HIỆN JOIN KHI TẠO FOREIGN KEY TỪ CÁC ĐỐI TƯỢNG
   const join_date_col = "business_date"
+  
+  // 3. Tên hash key
+  const hash_key_name = "cash_movement_key";
 
-  // 3. DANH SÁCH CÁC TRƯỜNG ĐƯỢC LẤY TỪ BẢNG FACT (không bao gồm thông tin về các đối tượng)
+  // 4. DANH SÁCH CÁC TRƯỜNG ĐƯỢC LẤY TỪ BẢNG FACT
+  //(không bao gồm thông tin về các đối tượng)
   const fact_cols = [
     "business_date", "allo_date", "ref_no", "is_deleted",
     "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
@@ -96,7 +100,7 @@ pre_operations {
 WITH staging_data AS (
     SELECT
         -- 1. Xác định key của bảng
-        f.fact_cash_movement_key as cash_movement_key,
+        f.${hash_key_name},
 
         -- 2. Các cột từ bảng fact
         ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
