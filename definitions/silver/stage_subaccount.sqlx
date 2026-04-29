@@ -27,7 +27,7 @@ config {
         updatePartitionFilter: "snapshot_date = target_date"
     },
     description: "Consolidated Subaccount staging. Uses 'As-Of' logic to join core snapshots with the latest available asset extensions.",
-    tags: ["silver", "subaccount", "daily"]
+    tags: ["silver", "stage", "subaccount", "daily"]
 }
 
 pre_operations {

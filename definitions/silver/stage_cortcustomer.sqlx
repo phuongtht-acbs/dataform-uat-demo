@@ -77,7 +77,7 @@ config {
         updatePartitionFilter: "snapshot_date = target_date"
     },
     description: "Bảng Staging lưu trữ lịch sử snapshot thông tin khách hàng. Dữ liệu được chuẩn hóa và lưu trữ lịch sử theo từng ngày.",
-    tags: ["silver", "customer", "daily"],
+    tags: ["silver", "stage", "customer", "daily"],
     columns: {
         // Audit & Keys
         _hash_key: "Khóa chính (Surrogate Key) sinh ra từ hash của CUST_CD",

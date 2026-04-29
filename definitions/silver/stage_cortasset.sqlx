@@ -47,6 +47,7 @@ config {
     type: "incremental",
     schema: "silver",
     name: "stage_cortasset",
+    tags: ["silver", "stage", "daily", "subaccount", "asset_value"],
     uniqueKey: ["_hash_key"],
     bigquery: {
         partitionBy: "business_date",

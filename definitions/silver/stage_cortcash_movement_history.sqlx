@@ -71,7 +71,7 @@ config {
         updatePartitionFilter: "business_date = target_date"
         },
     description: "Bảng Staging chuẩn hóa lịch sử giao dịch tiền của khách hàng từ hệ thống Core (CORTCASH_MOVEMENT_HISTORY). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo allo_date và ref_no.",
-    tags: ["silver", "cash_movement", "daily"],
+    tags: ["silver", "stage", "cash_movement", "daily"],
     columns: {
         _hash_key: "",
         _ingested_at: "",
