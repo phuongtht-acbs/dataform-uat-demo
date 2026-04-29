@@ -28,6 +28,7 @@ config {
     type: "incremental",
     schema: "silver",
     name: "fact_subaccount_daily_asset_value",
+    tags: ["silver", "asset_value", "fact", "daily"],
     uniqueKey: ["subaccount_daily_asset_value_key"],
     bigquery: {
         partitionBy: "business_date",
