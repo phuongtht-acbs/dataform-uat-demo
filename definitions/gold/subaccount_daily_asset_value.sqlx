@@ -1,0 +1,76 @@
+js {
+  const source_layer = "silver";
+  const source_table = "fact_subaccount_daily_asset_value";
+  const source_partition_col = "business_date";
+  const join_date_col = "business_date";
+
+  // Modification: Add const hash_key_name after defining join_date_col
+  const hash_key_name = "subaccount_daily_asset_value_key";
+
+  // Modification: fact_cols must not consist of field from dimensional entity
+  const fact_cols = [
+    "business_date", "is_deleted", "warning_level", "warning_num",
+    "cash_amt", "sec_val", "sec_mrg_val", "sec_pending_val", "sec_mrg_pending_val", 
+    "cash_pending_amt", "advance_amt", "bought_not_post_amt", "dividend_cash_amt", 
+    "dividend_sec_val", "dividend_right_val", "other_asset_val", "debit_margin_amt", 
+    "debit_coop_amt", "debit_debt_amt", "debit_mor_amt", "debit_other_amt", 
+    "debit_temp_amt", "total_interest_amt", "debit_margin_expired", "debit_coop_expired", 
+    "debit_mor_expired", "cash_block_amt", "credit_limit", "debt_interest_avail_payment", 
+    "need_to_addition_cash", "need_to_addition_sec", "need_to_sell", "total_asset", 
+    "total_mrg_asset", "total_debit", "margin_rate", "credit_cash_amt", "credit_sec_amt", 
+    "t0_buy_amt", "t1_buy_amt", "t2_buy_amt", "t0_sell_amt", "t1_sell_amt", "t2_sell_amt", 
+    "dividend_cash_market_amt", "dividend_sec_market_amt", "nav_bi"
+  ];
+}
+
+config {
+    type: "incremental",
+    schema: "gold",
+    name: "subaccount_daily_asset_value",
+    uniqueKey: ["subaccount_daily_asset_value_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        clusterBy: ["sub_acco_no"]
+    }
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`}
+  );
+}
+
+WITH staging_data AS (
+    SELECT
+        -- Modification: Use the hash key constant
+        f.${hash_key_name},
+
+        -- Measures from fact_cols
+        ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
+
+        -- Entity Keys for Joins
+        f.sub_acco_no,
+        s.subaccount_history_key,
+        f.cust_no,
+        s.customer_history_key,
+        s.broker_cd,
+        s.broker_history_key
+        
+    FROM ${ref(source_layer, source_table)} AS f
+    
+    -- Temporal join to historical dimension via subaccount_history
+    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", join_date_col)}
+    
+    WHERE f.${source_partition_col} = target_date
+)
+
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.*
+FROM staging_data AS stg
+${when(incremental(), `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name}`)}

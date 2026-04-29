@@ -3,4 +3,5 @@ declare({schema: 'bronze', name: "CORTCASH_MOVEMENT_HISTORY"});
 declare({schema: 'bronze', name: "CORTSUB_ACCOUNT"});
 declare({schema: 'bronze', name: "CORTASSET_EXT"}),
 declare({schema: 'bronze', name: "BRKTBROKER"}),
-declare({schema: 'bronze', name: "sheet_non_business_day"})
+declare({schema: 'bronze', name: "sheet_non_business_day"}),
+declare({schema:"bronze",name:"CORTASSET"})
