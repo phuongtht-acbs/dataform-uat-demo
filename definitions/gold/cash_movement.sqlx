@@ -1,6 +1,6 @@
 js {
   const source_layer = "silver";
-  const source_table = "fact_subaccount_daily_asset_value";
+  const source_table = "fact_cash_movement";
   const source_partition_col = "business_date";
   const target_partition_col = "business_date";
   const hash_key_name = "cash_movement_key";
