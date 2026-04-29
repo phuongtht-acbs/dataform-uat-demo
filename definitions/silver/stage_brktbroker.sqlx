@@ -72,7 +72,7 @@ config {
         updatePartitionFilter: "snapshot_date = target_date"
         },
     description: "Bảng Staging chuẩn hóa thông tin môi giới",
-    tags: ["silver", "broker", "daily"],
+    tags: ["silver", "stage", "broker", "daily"],
     columns: {
         // Audit & Keys
         _hash_key: "Khóa chính (Surrogate Key) của bản ghi Silver, sinh ra từ hash của broker_cd",
