@@ -1,5 +1,30 @@
+config {
+    type: "incremental",
+    schema: "silver",                                   // <-- 1. EDIT: Target schema
+    name: "dim_broker",                                 // <-- 2. EDIT: Target table name
+    uniqueKey: ["dim_broker_key"],                      // <-- 3. EDIT: Surrogate key name
+    tags: ["silver", "dimension", "daily", "broker"],   // <-- 4. EDIT: Tag list
+    bigquery: {
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
+    }
+}
+
 js {
-  // 1. Danh sách cột trong bảng
+  // ============================================================================
+  // 1. SOURCE CONFIGURATION FORM (Edit this section for each new dimension)
+  // ============================================================================
+  const dim_config = {
+    source_schema: "silver",                // Source staging schema
+    source_table: "stage_brktbroker",       // Source staging table name
+    
+    natural_key: "broker_cd",               // The business identifier
+    tech_key: "broker_cd",                  // The technical ID used to deduplicate (Same as natural key here)
+    partition_col: "snapshot_date",         // The date column from the source table
+    surrogate_key: "dim_broker_key"         // MUST match the uniqueKey in the config block
+  };
+
+  // 2. List of business columns to track and insert
   const dim_cols = [
     "broker_cd", "is_deleted", "parent_broker_cd", "family_name", "given_name",
     "mobile_no", "email_adrs", "adrs_1", "adrs_2", "approval_cd", "id_number",
@@ -9,86 +34,116 @@ js {
     "broker_type_id", "depend_number", "insurance_salary", "basic_salary",
     "end_basic_salary_month", "remarks"
   ];
-  // 2. Danh sách cột để tạo CTE current_dim
+
+  // ============================================================================
+  // DO NOT EDIT BELOW THIS LINE - AUTOMATED TEMPLATE LOGIC
+  // ============================================================================
+
   const cur_dim_cols = [
-    { name: "broker_cd", type: "STRING" },
+    { name: dim_config.natural_key, type: "STRING" },
     { name: "record_hash", type: "BYTES" },
-    { name: "dim_broker_key", type: "BYTES" },
+    { name: dim_config.surrogate_key, type: "BYTES" },
     { name: "_ingested_at", type: "TIMESTAMP" }
   ];
-  // 3. Source partition field
-  const source_partition_col = 'snapshot_date';
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "dim_broker",
-    description: "Bảng Dimension SCD Type 2 cho nhân viên môi giới. Quản lý lịch sử thông tin và trạng thái làm việc.",
-    tags: ["silver", "dimension", "daily", "broker"],
-    uniqueKey: ["dim_broker_key"],
-    bigquery: {
-        partitionBy: "DATE(valid_from)",
-        clusterBy: ['is_current']
-    }
 }
 
 pre_operations {
-  -- 1. Xác định thời gian chạy
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  -- 2. Xác định target_date
   DECLARE target_date DATE;
-  SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(${source_partition_col}) FROM ${ref("silver", "stage_brktbroker")})`
-    }
-  );
+  
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${dim_config.partition_col}) FROM ${ref(dim_config.source_schema, dim_config.source_table)})`
+      };`
+    : `SET target_date = NULL;`
+  }
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
--- 1. Lấy dữ liệu từ Staging
+${when(!incremental(), `
+-- 1. Full Refresh Path: Lead-Lag Logic
+WITH all_history AS (
+    SELECT
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${dim_config.partition_col},
+        * EXCEPT(${dim_config.partition_col}, _ingested_at, _updated_at, _hash_key)
+    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ${dim_config.natural_key}, ${dim_config.partition_col} ORDER BY ${dim_config.tech_key} DESC
+    ) = 1
+),
+deduped_history AS (
+    SELECT 
+        *,
+        LAG(record_hash) OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.partition_col}) AS prev_hash
+    FROM all_history
+),
+filtered_changes AS (
+    SELECT * FROM deduped_history 
+    WHERE prev_hash IS NULL OR record_hash != prev_hash
+),
+scd2_rebuild AS (
+    SELECT
+        *,
+        ${dim_config.partition_col} AS valid_from_date,
+        LEAD(${dim_config.partition_col}) OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.partition_col}) AS valid_to_date
+    FROM filtered_changes
+)
+SELECT
+    run_time AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash([dim_config.natural_key, "CAST(valid_from_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    CAST(valid_from_date AS TIMESTAMP) AS valid_from,
+    CAST(valid_to_date AS TIMESTAMP) AS valid_to,
+    (valid_to_date IS NULL) AS is_current,
+    * EXCEPT(${dim_config.partition_col}, prev_hash, valid_from_date, valid_to_date)
+FROM scd2_rebuild
+`)}
+
+${when(incremental(), `
+-- 2. Incremental Path: Comparison Logic
 WITH staging_data AS (
     SELECT
         ${func.generateHash(dim_cols)} AS record_hash,
         ${dim_cols.join(",\n        ")}
-    FROM ${ref("silver", "stage_brktbroker")}
-    WHERE ${source_partition_col} = target_date
+    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+    WHERE ${dim_config.partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.tech_key} DESC) = 1
 ),
-
--- 2. Xác định các bản ghi hiện tại trong Dimension
 current_dim AS (
     ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
 )
-
--- 3. Insert bản ghi mới hoặc bản ghi có thay đổi thông tin
 SELECT
-    ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    COALESCE(cur._ingested_at, run_time) AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generateHash(["stg.broker_cd", "CAST(target_date AS TIMESTAMP)"])} AS dim_broker_key,
+    ${func.generateHash(["stg." + dim_config.natural_key, "CAST(target_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
     true AS is_current,
     stg.*
 FROM staging_data AS stg
-LEFT JOIN current_dim AS cur ON stg.broker_cd = cur.broker_cd
-WHERE 
-    cur.broker_cd IS NULL 
-    OR stg.record_hash != cur.record_hash
+LEFT JOIN current_dim AS cur ON stg.${dim_config.natural_key} = cur.${dim_config.natural_key}
+WHERE cur.${dim_config.natural_key} IS NULL OR stg.record_hash != cur.record_hash
+`)}
 
 post_operations {
--- 4. Đóng record cũ khi có phiên bản mới
+  ${when(incremental(), `
   MERGE ${self()} AS t
   USING (
     SELECT
-        broker_cd,
-        ${func.generateHash(dim_cols)} AS record_hash
-    FROM ${ref("silver", "stage_brktbroker")}
-    WHERE ${source_partition_col} = target_date
-  ) AS s
-  ON t.broker_cd = s.broker_cd AND t.is_current AND t.record_hash != s.record_hash
-  WHEN MATCHED THEN
+      ${dim_config.natural_key},
+      ${func.generateHash(dim_cols)} AS record_hash
+    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+    WHERE ${dim_config.partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.tech_key} DESC) = 1
+  ) AS src
+  ON t.${dim_config.natural_key} = src.${dim_config.natural_key} AND t.is_current = true AND t.record_hash != src.record_hash
+  WHEN MATCHED THEN 
     UPDATE SET
       t._updated_at = run_time,
       t.valid_to = CAST(target_date AS TIMESTAMP),
       t.is_current = false;
+  `)}
 }
