@@ -23,20 +23,21 @@ js {
   // 2. Explicitly list the fields we want to keep from the silver dimension
   const source_table = ref("silver", "dim_subaccount");
   const source_cols = [
-    "sub_acco_cd", "sub_acco_no", "algos_type", "type_flg", "curr_cd", 
-    "bank_cd", "bank_branch_cd", "bank_acco_number", "bank_acco_name", 
-    "bank_acco_id_no", "not_update_by_cust", "contract_no", "acco_flg", 
-    "trade_acco_no", "source_cd", "source_sname", "open_date", "close_date", 
-    "reopen_date", "remarks", "is_auto_advance", "is_auto_mortgage", 
-    "retention_rate", "warning_rate", "tn_rate", "call_rate", "withdraw_rate", 
-    "margin_limit_grp", "margin_limit",
-    'cust_group_id'
+    "sub_acco_cd", "sub_acco_no", "cust_cd", "cust_group_id",
+    "is_deleted", "acco_type", "algos_type", "type_flg", "curr_cd",
+    "bank_cd", "bank_branch_cd", "bank_acco_number", "bank_acco_name", "bank_acco_id_no", "bank_flg",
+    "not_update_by_cust", "contract_no", "source_channel", "broker_cd",
+    "acco_sts", "acco_flg", "trade_acco_no", "status",
+    "source_cd", "source_sname", "remarks", "open_date", "close_date", "reopen_date",
+    "is_auto_advance", "is_auto_mortgage", "retention_rate",
+    "warning_rate", "tn_rate", "call_rate", "withdraw_rate",
+    "margin_limit_grp", "margin_limit"
   ];
 
   // 3. Explicitly list the enriched fields added via JOINS
   const enriched_cols = [
-    "acco_type_name", "status_name", "source_channel_name", "bank_flg_name",
-    "cust_no", "customer_history_key", "broker_cd", "broker_history_key"
+    "acco_type_name", "acco_sts_name", "status_name", "source_channel_name", "bank_flg_name",
+    "customer_history_key", "broker_history_key"
   ];
 
   // Combine both arrays for the comprehensive SCD2 record hash
@@ -51,19 +52,37 @@ js {
         SELECT
             ${source_cols.map(col => `s.${col}`).join(",\n            ")},
             
+            lkp_alg.attribute_name as algos_type_name,
             lkp_type.attribute_name AS acco_type_name,
+            lkp_ast.attribute_name AS acco_sts_name,
             lkp_sts.attribute_name AS status_name,
             lkp_src.attribute_name AS source_channel_name,
             lkp_bnk.attribute_name AS bank_flg_name,
             
-            c.cust_no, c.customer_history_key,
-            b.broker_cd, b.broker_history_key
+            c.customer_history_key,
+            b.broker_history_key
             
         FROM ${source_table} AS s
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTSUB_ACCOUNT__ACCO_TYPE' AND s.acco_type = lkp_type.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTSUB_ACCOUNT__STATUS' AND s.status = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTSUB_ACCOUNT__SOURCE_CHANNEL' AND s.source_channel = lkp_src.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_bnk ON lkp_bnk.category = 'CORTSUB_ACCOUNT__BANK_FLG' AND s.bank_flg = lkp_bnk.attribute_code
+        
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type 
+          ON lkp_type.category = 'CORTSUB_ACCOUNT__ACCO_TYPE'
+          AND s.acco_type = lkp_type.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
+          ON lkp_sts.category = 'CORTSUB_ACCOUNT__STATUS'
+          AND s.status = lkp_sts.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src
+          ON lkp_src.category = 'CORTSUB_ACCOUNT__SOURCE_CHANNEL'
+          AND s.source_channel = lkp_src.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_bnk
+          ON lkp_bnk.category = 'CORTSUB_ACCOUNT__BANK_FLG'
+          AND s.bank_flg = lkp_bnk.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_ast
+          ON lkp_ast.category = 'CORTSUB_ACCOUNT__ACCO_STS'
+          AND s.acco_sts = lkp_ast.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_alg
+          ON lkp_alg.category = 'CORTSUB_ACCOUNT__ALGOS_TYPE'
+          AND s.algos_type = lkp_alg.attribute_code
+        
         ${func.joinHistory(ref("gold", "customer_history"), "c", "s.cust_cd", "cust_cd", "target_date")}
         ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "target_date")}
         WHERE s.is_current
