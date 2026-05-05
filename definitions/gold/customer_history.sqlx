@@ -83,7 +83,7 @@ js {
           ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS'
           AND s.vsd_status = lkp_vsd.attribute_code
         LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con
-          ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS
+          ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS'
            AND s.contract_status = lkp_con.attribute_code
         LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app
           ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD'
