@@ -55,13 +55,16 @@ js {
         FROM ${source_table} AS s
         
         LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_emp 
-            ON lkp_emp.category = 'BRKTBROKER__EMPLOYEE_TYPE' AND s.employee_type = lkp_emp.attribute_code
+            ON lkp_emp.category = 'BRKTBROKER__EMPLOYEE_TYPE'
+            AND s.employee_type = lkp_emp.attribute_code
         LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
-            ON lkp_sts.category = 'BRKTBROKER__ACCO_STS' AND s.acco_sts = lkp_sts.attribute_code
+            ON lkp_sts.category = 'BRKTBROKER__ACCO_STS'
+            AND s.acco_sts = lkp_sts.attribute_code
         LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app 
-            ON lkp_app.category = 'BRKTBROKER__APPROVAL_CD' AND s.approval_cd = lkp_app.attribute_code
+            ON lkp_app.category = 'BRKTBROKER__APPROVAL_CD'
+            AND s.approval_cd = lkp_app.attribute_code
             
-        WHERE s.is_current = true
+        WHERE target_date >= DATE(s.valid_from) AND (s.valid_to IS NULL OR target_date < DATE(s.valid_to))
     )
   `;
 

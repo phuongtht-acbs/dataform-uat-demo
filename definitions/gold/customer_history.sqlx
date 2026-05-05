@@ -67,18 +67,34 @@ js {
             
         FROM ${source_table} AS s
         
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTCUSTOMER__CUST_TYPE' AND s.cust_type = lkp_type.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_for ON lkp_for.category = 'CORTCUSTOMER__FOREIGN_TYPE' AND s.foreign_type = lkp_for.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sex ON lkp_sex.category = 'CORTCUSTOMER__SEX' AND s.sex = lkp_sex.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTCUSTOMER__ACCO_STS' AND s.acco_sts = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_vsd ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS' AND s.vsd_status = lkp_vsd.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS' AND s.contract_status = lkp_con.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD' AND s.approval_cd = lkp_app.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTCUSTOMER__SRC_CHANNEL' AND s.src_channel = lkp_src.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type
+          ON lkp_type.category = 'CORTCUSTOMER__CUST_TYPE'
+          AND s.cust_type = lkp_type.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_for
+          ON lkp_for.category = 'CORTCUSTOMER__FOREIGN_TYPE'
+          AND s.foreign_type = lkp_for.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sex
+          ON lkp_sex.category = 'CORTCUSTOMER__SEX'
+          AND s.sex = lkp_sex.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
+          ON lkp_sts.category = 'CORTCUSTOMER__ACCO_STS'
+          AND s.acco_sts = lkp_sts.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_vsd
+          ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS'
+          AND s.vsd_status = lkp_vsd.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con
+          ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS
+           AND s.contract_status = lkp_con.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app
+          ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD'
+          AND s.approval_cd = lkp_app.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src
+          ON lkp_src.category = 'CORTCUSTOMER__SRC_CHANNEL'
+          AND s.src_channel = lkp_src.attribute_code
         
         ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "target_date")}
         
-        WHERE s.is_current = true
+        WHERE target_date >= DATE(s.valid_from) AND (s.valid_to IS NULL OR target_date < DATE(s.valid_to))
     )
   `;
 
