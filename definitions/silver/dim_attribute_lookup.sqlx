@@ -20,6 +20,7 @@ js {
       5: "TK QUỸ MỞ", 6: "DERIVATIVES", 7: "OTHER", 9: "ALGOS" 
     },
     "CORTSUB_ACCOUNT__ACCO_STS": { 1: "Open", 2: "Close" },
+    "CORTSUB_ACCOUNT__ALGOS_TYPE": { 1: "CopyTrade", 2: "Chiến thuật" },
     "CORTSUB_ACCOUNT__STATUS": { 0: "Pending", 1: "Approved" },
     "CORTSUB_ACCOUNT__SOURCE_CHANNEL": { 1: "Back Office", 2: "Front Office", 3: "Floor Trading" },
     "CORTSUB_ACCOUNT__BANK_FLG": { 1: "Phong tỏa đầu ngày", 2: "Phong tỏa thủ công", 3: "Phong tỏa tự động", 4: "Đồng bộ số dư" },
