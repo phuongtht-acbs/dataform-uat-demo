@@ -1,32 +1,8 @@
-js {
-  // 1. Comprehensive list of business fields for hashing and the Gold layer
-  const gold_cols = [
-    "cust_cd", "cust_no", "transaction_cd", "cust_family_name", "cust_given_name", "tax_code",
-    "birthday", "mobile_no", "email_adrs", "email_flg", "id_number", "issue_location",
-    "issue_date", "expire_date", "country_cd", "job", "introducer_cd", "department_cd",
-    "com3_cust_type", "pres_name", "pres_birthday", "pres_position", "pres_country_cd",
-    "pres_id_number", "pres_issue_location", "pres_issue_date", "pres_expire_date",
-    "pres_tel_no", "pres_email_adrs", "channel_id", "number_of_sig", "acco_divide",
-    "acco_act_date", "acco_sts_date", "acco_str_date", "contract_complete_date", "contract_no",
-    "order_money_conf", "order_stock_conf", "not_collect_tax", "reason_reject", "remarks", "sid", "pcod",
-    "cust_type_name", "foreign_type_name", "sex_name", "acco_sts_name", "vsd_status_name", 
-    "contract_status_name", "approval_cd_name", "src_channel_name",
-    "broker_cd", "broker_history_key", "broker_family_name", "broker_given_name"
-  ];
-
-  // 2. Metadata for identifying current records in Gold
-  const cur_dim_cols = [
-    { name: "cust_no", type: "STRING" },
-    { name: "record_hash", type: "BYTES" },
-    { name: "_ingested_at", type: "TIMESTAMP" }
-  ];
-}
-
 config {
     type: "incremental",
     schema: "gold",
     name: "customer_history",
-    description: "Full denormalized SCD Type 2 Customer history. Includes mapped attributes and linked Broker version.",
+    description: "Full denormalized SCD Type 2 Customer history.",
     tags: ["gold", "customer", "history"],
     uniqueKey: ["customer_history_key"],
     bigquery: {
@@ -35,27 +11,47 @@ config {
     }
 }
 
-pre_operations {
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  DECLARE target_date DATE;
-  -- target_date is derived from the staging table to reflect the latest snapshot
-  SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(insert_date) FROM ${ref("silver", "stage_cortcustomer")})`
-    }
-  );
-}
+js {
+  // 1. SQL-specific configuration
+  const natural_key = "cust_no";
+  const history_key = "customer_history_key";
 
--- 1. Combined logic: Subquery for denormalization, outer query for hashing
-WITH staging_hashed AS (
+  // Configuration for deriving the target_date
+  const target_date_col = "snapshot_date";
+  const target_date_source = ref("silver", "stage_cortcustomer");
+
+  // 2. Explicitly list the fields we want to keep from the silver dimension
+  const source_table = ref("silver", "dim_customer");
+  const source_cols = [
+    "cust_cd", "cust_no", "transaction_cd", "cust_family_name", "cust_given_name", "tax_code",
+    "birthday", "mobile_no", "email_adrs", "email_flg", "id_number", "issue_location",
+    "issue_date", "expire_date", "country_cd", "job", "broker_cd", "introducer_cd", "department_cd",
+    "com3_cust_type", "pres_name", "pres_birthday", "pres_position", "pres_country_cd",
+    "pres_id_number", "pres_issue_location", "pres_issue_date", "pres_expire_date",
+    "pres_tel_no", "pres_email_adrs", "channel_id", "number_of_sig", "acco_divide",
+    "acco_act_date", "acco_sts_date", "acco_str_date", "contract_complete_date", "contract_no",
+    "order_money_conf", "order_stock_conf", "not_collect_tax", "reason_reject", "remarks", "sid", "pcod"
+  ];
+
+  // 3. Explicitly list the enriched fields added via JOINS
+  const enriched_cols = [
+    "cust_type_name", "foreign_type_name", "sex_name", "acco_sts_name", "vsd_status_name", 
+    "contract_status_name", "approval_cd_name", "src_channel_name",
+    "broker_history_key",
+  ];
+
+  // Combine both arrays for the comprehensive SCD2 record hash
+  const gold_cols = [...source_cols, ...enriched_cols];
+
+  // 4. Centralized Denormalization Logic
+  const denorm_query = `
     SELECT
         ${func.generateHash(gold_cols)} AS record_hash,
         *
     FROM (
         SELECT
-            c.* EXCEPT(record_hash, dim_customer_key, _updated_at, _ingested_at, is_current, valid_from, valid_to, is_deleted),
-            -- Lookups for Customer attributes
+            ${source_cols.map(col => `s.${col}`).join(",\n            ")},
+            
             lkp_type.attribute_name AS cust_type_name,
             lkp_for.attribute_name AS foreign_type_name,
             lkp_sex.attribute_name AS sex_name,
@@ -64,82 +60,65 @@ WITH staging_hashed AS (
             lkp_con.attribute_name AS contract_status_name,
             lkp_app.attribute_name AS approval_cd_name,
             lkp_src.attribute_name AS src_channel_name,
-            -- Denormalized Broker Info from Gold Broker History
+            
             b.broker_history_key,
             b.family_name AS broker_family_name,
             b.given_name AS broker_given_name
-        FROM ${ref("silver", "dim_customer")} AS c
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTCUSTOMER__CUST_TYPE' AND c.cust_type = lkp_type.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_for ON lkp_for.category = 'CORTCUSTOMER__FOREIGN_TYPE' AND c.foreign_type = lkp_for.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sex ON lkp_sex.category = 'CORTCUSTOMER__SEX' AND c.sex = lkp_sex.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTCUSTOMER__ACCO_STS' AND c.acco_sts = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_vsd ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS' AND c.vsd_status = lkp_vsd.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS' AND c.contract_status = lkp_con.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD' AND c.approval_cd = lkp_app.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTCUSTOMER__SRC_CHANNEL' AND c.src_channel = lkp_src.attribute_code
-        -- Join with broker history to get the specific version active at target_date
-        LEFT JOIN ${ref("gold", "broker_history")} AS b
-            ON c.broker_cd = b.broker_cd 
-            AND target_date >= DATE(b.valid_from) 
-            AND (b.valid_to IS NULL OR target_date < DATE(b.valid_to))
-        WHERE c.is_current = true
+            
+        FROM ${source_table} AS s
+        
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTCUSTOMER__CUST_TYPE' AND s.cust_type = lkp_type.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_for ON lkp_for.category = 'CORTCUSTOMER__FOREIGN_TYPE' AND s.foreign_type = lkp_for.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sex ON lkp_sex.category = 'CORTCUSTOMER__SEX' AND s.sex = lkp_sex.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTCUSTOMER__ACCO_STS' AND s.acco_sts = lkp_sts.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_vsd ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS' AND s.vsd_status = lkp_vsd.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS' AND s.contract_status = lkp_con.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD' AND s.approval_cd = lkp_app.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTCUSTOMER__SRC_CHANNEL' AND s.src_channel = lkp_src.attribute_code
+        
+        ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "target_date")}
+        
+        WHERE s.is_current = true
     )
-),
+  `;
 
--- 2. Identify currently active records in Gold
-current_gold AS (
-    ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
-)
+  // Helper for getCurrentDim metadata
+  const cur_dim_cols = [
+    { name: natural_key, type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+}
 
--- 3. Insert new versions
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(${target_date_col}) FROM ${target_date_source})`
+    }
+  );
+  
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+WITH
+  staging_hashed AS (${denorm_query}),
+  current_gold AS (${func.getCurrentDim(incremental(), self(), cur_dim_cols)})
+
 SELECT
     ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generateHash(["stg.cust_no", "CAST(target_date AS STRING)"])} AS customer_history_key,
+    ${func.generateHash(["stg." + natural_key, "CAST(target_date AS STRING)"])} AS ${history_key},
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
     true AS is_current,
     stg.*
 FROM staging_hashed AS stg
-LEFT JOIN current_gold AS cur ON stg.cust_no = cur.cust_no
-WHERE cur.cust_no IS NULL OR stg.record_hash != cur.record_hash
+LEFT JOIN current_gold AS cur ON stg.${natural_key} = cur.${natural_key}
+WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
 
 post_operations {
-  -- 4. Expire old records using identical subquery logic
-  MERGE ${self()} AS t
-  USING (
-    SELECT
-        ${func.generateHash(gold_cols)} AS record_hash,
-        cust_no
-    FROM (
-        SELECT
-            c.* EXCEPT(record_hash, dim_customer_key, _updated_at, _ingested_at, is_current, valid_from, valid_to, is_deleted),
-            lkp_type.attribute_name AS cust_type_name,
-            lkp_for.attribute_name AS foreign_type_name,
-            lkp_sex.attribute_name AS sex_name,
-            lkp_sts.attribute_name AS acco_sts_name,
-            lkp_vsd.attribute_name AS vsd_status_name,
-            lkp_con.attribute_name AS contract_status_name,
-            lkp_app.attribute_name AS approval_cd_name,
-            lkp_src.attribute_name AS src_channel_name,
-            b.broker_history_key, b.family_name AS broker_family_name, b.given_name AS broker_given_name
-        FROM ${ref("silver", "dim_customer")} AS c
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTCUSTOMER__CUST_TYPE' AND c.cust_type = lkp_type.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_for ON lkp_for.category = 'CORTCUSTOMER__FOREIGN_TYPE' AND c.foreign_type = lkp_for.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sex ON lkp_sex.category = 'CORTCUSTOMER__SEX' AND c.sex = lkp_sex.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTCUSTOMER__ACCO_STS' AND c.acco_sts = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_vsd ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS' AND c.vsd_status = lkp_vsd.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS' AND c.contract_status = lkp_con.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD' AND c.approval_cd = lkp_app.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTCUSTOMER__SRC_CHANNEL' AND c.src_channel = lkp_src.attribute_code
-        LEFT JOIN ${ref("gold", "broker_history")} AS b ON c.broker_cd = b.broker_cd AND target_date >= DATE(b.valid_from) AND (b.valid_to IS NULL OR target_date < DATE(b.valid_to))
-        WHERE c.is_current = true
-    )
-  ) AS s
-  ON t.cust_no = s.cust_no AND t.is_current AND t.record_hash != s.record_hash
-  WHEN MATCHED THEN
-    UPDATE SET
-      t._updated_at = run_time,
-      t.valid_to = CAST(target_date AS TIMESTAMP),
-      t.is_current = false;
+  ${func.expireHistory(self(), natural_key, denorm_query)}
 }
