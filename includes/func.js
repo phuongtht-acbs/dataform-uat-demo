@@ -79,15 +79,36 @@ function getCurrentDim(isIncremental, selfRef, columns) {
 function joinHistory(tableRef, alias, leftKey, rightKey, dateCol) {
   return `LEFT JOIN ${tableRef} AS ${alias}
     ON ${leftKey} = ${alias}.${rightKey}
-    AND f.${dateCol} >= DATE(${alias}.valid_from)
-    AND (${alias}.valid_to IS NULL OR f.${dateCol} < DATE(${alias}.valid_to))`;
+    AND ${dateCol} >= DATE(${alias}.valid_from)
+    AND (${alias}.valid_to IS NULL OR ${dateCol} < DATE(${alias}.valid_to))`;
 }
 
+/**
+ * Standardizes SCD2 expiration merge logic for Gold history tables.
+ * @param {string} targetTable - result of self()
+ * @param {string} naturalKey - The business identifier (e.g., 'sub_acco_no')
+ * @param {string} stagingQuery - The SQL string for the denormalized data
+ */
+function expireHistory(targetTable, naturalKey, stagingQuery) {
+  return `
+    MERGE ${targetTable} AS t
+    USING (${stagingQuery}) AS s
+    ON t.${naturalKey} = s.${naturalKey} 
+    AND t.is_current = true 
+    AND t.record_hash != s.record_hash
+    WHEN MATCHED THEN
+      UPDATE SET
+        t._updated_at = run_time,
+        t.valid_to = CAST(target_date AS TIMESTAMP),
+        t.is_current = false;
+  `;
+}
 module.exports = { 
     cleanNullString, 
     cleanNullDate,
     parseNumericDate,
     generateHash,
     getCurrentDim,
-    joinHistory
+    joinHistory,
+    expireHistory
 };
