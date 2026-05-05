@@ -1,31 +1,8 @@
-js {
-  // 1. Comprehensive list of business attributes for hashing and the Gold layer
-  const gold_cols = [
-    "sub_acco_cd", "sub_acco_no", "algos_type", "type_flg", "curr_cd", 
-    "bank_cd", "bank_branch_cd", "bank_acco_number", "bank_acco_name", 
-    "bank_acco_id_no", "not_update_by_cust", "contract_no", "acco_flg", 
-    "trade_acco_no", "source_cd", "source_sname", "open_date", "close_date", 
-    "reopen_date", "remarks", "is_auto_advance", "is_auto_mortgage", 
-    "retention_rate", "warning_rate", "tn_rate", "call_rate", "withdraw_rate", 
-    "margin_limit_grp", "margin_limit",
-    "acco_type_name", "status_name", "source_channel_name", "bank_flg_name",
-    "cust_no", "customer_history_key", "cust_family_name", "cust_given_name",
-    "broker_cd", "broker_history_key", "broker_family_name", "broker_given_name"
-  ];
-
-  // 2. Metadata for identifying currently active records in Gold
-  const cur_dim_cols = [
-    { name: "sub_acco_no", type: "STRING" },
-    { name: "record_hash", type: "BYTES" },
-    { name: "_ingested_at", type: "TIMESTAMP" }
-  ];
-}
-
 config {
     type: "incremental",
     schema: "gold",
     name: "subaccount_history",
-    description: "Full denormalized SCD Type 2 Subaccount history, including margin details and linked entities.",
+    description: "Full denormalized SCD Type 2 Subaccount history.",
     tags: ["gold", "subaccount", "history"],
     uniqueKey: ["subaccount_history_key"],
     bigquery: {
@@ -34,127 +11,100 @@ config {
     }
 }
 
-pre_operations {
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  DECLARE target_date DATE;
-  -- Derived from the latest snapshot in the Silver staging tables
-  SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(
-          SELECT MAX(max_date) FROM (
-            SELECT MAX(snapshot_date) AS max_date FROM ${ref("silver", "stage_cortsub_account")}
-            UNION ALL
-            SELECT MAX(business_date) AS max_date FROM ${ref("silver", "stage_cortasset_ext")}
-          )
-        )`
-    }
-  );
-}
+js {
+  // 1. SQL-specific configuration
+  const natural_key = "sub_acco_no";
+  const history_key = "subaccount_history_key";
 
--- 1. Subquery to handle complex joins and denormalization
-WITH staging_hashed AS (
+  // Configuration for deriving the target_date
+  const target_date_col = "snapshot_date";
+  const target_date_source = ref("silver", "stage_cortsub_account");
+
+  // 2. Explicitly list the fields we want to keep from the silver dimension
+  const source_table = ref("silver", "dim_subaccount");
+  const source_cols = [
+    "sub_acco_cd", "sub_acco_no", "algos_type", "type_flg", "curr_cd", 
+    "bank_cd", "bank_branch_cd", "bank_acco_number", "bank_acco_name", 
+    "bank_acco_id_no", "not_update_by_cust", "contract_no", "acco_flg", 
+    "trade_acco_no", "source_cd", "source_sname", "open_date", "close_date", 
+    "reopen_date", "remarks", "is_auto_advance", "is_auto_mortgage", 
+    "retention_rate", "warning_rate", "tn_rate", "call_rate", "withdraw_rate", 
+    "margin_limit_grp", "margin_limit",
+    'cust_group_id'
+  ];
+
+  // 3. Explicitly list the enriched fields added via JOINS
+  const enriched_cols = [
+    "acco_type_name", "status_name", "source_channel_name", "bank_flg_name",
+    "cust_no", "customer_history_key", "broker_cd", "broker_history_key"
+  ];
+
+  // Combine both arrays for the comprehensive SCD2 record hash
+  const gold_cols = [...source_cols, ...enriched_cols];
+
+  // 4. Centralized Denormalization Logic
+  const denorm_query = `
     SELECT
         ${func.generateHash(gold_cols)} AS record_hash,
         *
     FROM (
         SELECT
-            s.sub_acco_cd, s.sub_acco_no, s.algos_type, s.type_flg, s.curr_cd, 
-            s.bank_cd, s.bank_branch_cd, s.bank_acco_number, s.bank_acco_name, 
-            s.bank_acco_id_no, s.not_update_by_cust, s.contract_no, s.acco_flg, 
-            s.trade_acco_no, s.source_cd, s.source_sname, s.open_date, s.close_date, 
-            s.reopen_date, s.remarks, s.is_auto_advance, s.is_auto_mortgage, 
-            s.retention_rate, s.warning_rate, s.tn_rate, s.call_rate, s.withdraw_rate, 
-            s.margin_limit_grp, s.margin_limit,
-            -- Lookups for descriptive names
+            ${source_cols.map(col => `s.${col}`).join(",\n            ")},
+            
             lkp_type.attribute_name AS acco_type_name,
             lkp_sts.attribute_name AS status_name,
             lkp_src.attribute_name AS source_channel_name,
             lkp_bnk.attribute_name AS bank_flg_name,
-            -- Denormalized Customer Info from Customer History
-            c.cust_no, c.customer_history_key, c.cust_family_name, c.cust_given_name,
-            -- Denormalized Broker Info from Broker History
-            b.broker_cd, b.broker_history_key, 
-            b.family_name AS broker_family_name, b.given_name AS broker_given_name
-        FROM ${ref("silver", "dim_subaccount")} AS s
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type 
-            ON lkp_type.category = 'CORTSUB_ACCOUNT__ACCO_TYPE' AND s.acco_type = lkp_type.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
-            ON lkp_sts.category = 'CORTSUB_ACCOUNT__STATUS' AND s.status = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src 
-            ON lkp_src.category = 'CORTSUB_ACCOUNT__SOURCE_CHANNEL' AND s.source_channel = lkp_src.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_bnk 
-            ON lkp_bnk.category = 'CORTSUB_ACCOUNT__BANK_FLG' AND s.bank_flg = lkp_bnk.attribute_code
-        -- Join to pick the version of Customer active at target_date
-        LEFT JOIN ${ref("gold", "customer_history")} AS c
-            ON s.cust_cd = c.cust_cd 
-            AND target_date >= DATE(c.valid_from) 
-            AND (c.valid_to IS NULL OR target_date < DATE(c.valid_to))
-        -- Join to pick the version of Broker active at target_date
-        LEFT JOIN ${ref("gold", "broker_history")} AS b
-            ON s.broker_cd = b.broker_cd 
-            AND target_date >= DATE(b.valid_from) 
-            AND (b.valid_to IS NULL OR target_date < DATE(b.valid_to))
-        WHERE s.is_current = true
+            
+            c.cust_no, c.customer_history_key,
+            b.broker_cd, b.broker_history_key
+            
+        FROM ${source_table} AS s
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTSUB_ACCOUNT__ACCO_TYPE' AND s.acco_type = lkp_type.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTSUB_ACCOUNT__STATUS' AND s.status = lkp_sts.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTSUB_ACCOUNT__SOURCE_CHANNEL' AND s.source_channel = lkp_src.attribute_code
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_bnk ON lkp_bnk.category = 'CORTSUB_ACCOUNT__BANK_FLG' AND s.bank_flg = lkp_bnk.attribute_code
+        ${func.joinHistory(ref("gold", "customer_history"), "c", "s.cust_cd", "cust_cd", "target_date")}
+        ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "target_date")}
+        WHERE s.is_current
     )
-),
+  `;
 
--- 2. Fetch current Gold records for comparison
-current_gold AS (
-    ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
-)
+  // Helper for getCurrentDim metadata
+  const cur_dim_cols = [
+    { name: natural_key, type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+}
 
--- 3. Insert new or updated records
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(${target_date_col}) FROM ${target_date_source})`
+    }
+  );
+}
+
+WITH
+  staging_hashed AS (${denorm_query}),
+  current_gold AS (${func.getCurrentDim(incremental(), self(), cur_dim_cols)})
+
 SELECT
     ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generateHash(["stg.sub_acco_no", "CAST(target_date AS STRING)"])} AS subaccount_history_key,
+    ${func.generateHash(["stg." + natural_key, "CAST(target_date AS STRING)"])} AS ${history_key},
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
     true AS is_current,
     stg.*
 FROM staging_hashed AS stg
-LEFT JOIN current_gold AS cur ON stg.sub_acco_no = cur.sub_acco_no
-WHERE cur.sub_acco_no IS NULL OR stg.record_hash != cur.record_hash
+LEFT JOIN current_gold AS cur ON stg.${natural_key} = cur.${natural_key}
+WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
 
 post_operations {
-  -- 4. Close old records if a new version was created
-  MERGE ${self()} AS t
-  USING (
-    SELECT
-        ${func.generateHash(gold_cols)} AS record_hash,
-        sub_acco_no
-    FROM (
-        SELECT
-            s.sub_acco_no, s.sub_acco_cd, s.algos_type, s.type_flg, s.curr_cd, 
-            s.bank_cd, s.bank_branch_cd, s.bank_acco_number, s.bank_acco_name, 
-            s.bank_acco_id_no, s.not_update_by_cust, s.contract_no, s.acco_flg, 
-            s.trade_acco_no, s.source_cd, s.source_sname, s.open_date, s.close_date, 
-            s.reopen_date, s.remarks, s.is_auto_advance, s.is_auto_mortgage, 
-            s.retention_rate, s.warning_rate, s.tn_rate, s.call_rate, s.withdraw_rate, 
-            s.margin_limit_grp, s.margin_limit,
-            lkp_type.attribute_name AS acco_type_name,
-            lkp_sts.attribute_name AS status_name,
-            lkp_src.attribute_name AS source_channel_name,
-            lkp_bnk.attribute_name AS bank_flg_name,
-            c.cust_no, c.customer_history_key, c.cust_family_name, c.cust_given_name,
-            b.broker_cd, b.broker_history_key, b.family_name AS broker_family_name, b.given_name AS broker_given_name
-        FROM ${ref("silver", "dim_subaccount")} AS s
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type ON lkp_type.category = 'CORTSUB_ACCOUNT__ACCO_TYPE' AND s.acco_type = lkp_type.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts ON lkp_sts.category = 'CORTSUB_ACCOUNT__STATUS' AND s.status = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src ON lkp_src.category = 'CORTSUB_ACCOUNT__SOURCE_CHANNEL' AND s.source_channel = lkp_src.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_bnk ON lkp_bnk.category = 'CORTSUB_ACCOUNT__BANK_FLG' AND s.bank_flg = lkp_bnk.attribute_code
-        LEFT JOIN ${ref("gold", "customer_history")} AS c ON s.cust_cd = c.cust_cd AND target_date >= DATE(c.valid_from) AND (c.valid_to IS NULL OR target_date < DATE(c.valid_to))
-        LEFT JOIN ${ref("gold", "broker_history")} AS b ON s.broker_cd = b.broker_cd AND target_date >= DATE(b.valid_from) AND (b.valid_to IS NULL OR target_date < DATE(b.valid_to))
-        WHERE s.is_current = true
-    )
-  ) AS s
-  ON t.sub_acco_no = s.sub_acco_no 
-  AND t.is_current = true 
-  AND t.record_hash != s.record_hash
-  WHEN MATCHED THEN
-    UPDATE SET
-      t._updated_at = run_time,
-      t.valid_to = CAST(target_date AS TIMESTAMP),
-      t.is_current = false;
+  ${func.expireHistory(self(), natural_key, denorm_query)}
 }
