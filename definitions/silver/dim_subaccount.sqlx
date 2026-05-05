@@ -33,7 +33,8 @@ js {
     "trade_acco_no", "status", "source_cd", "source_sname", "open_date",
     "close_date", "reopen_date", "remarks", "is_auto_advance", 
     "is_auto_mortgage", "retention_rate", "warning_rate", "tn_rate", 
-    "call_rate", "withdraw_rate", "margin_limit_grp", "margin_limit"
+    "call_rate", "withdraw_rate", "margin_limit_grp", "margin_limit",
+    'cust_group_id'
   ];
 
   // ============================================================================
