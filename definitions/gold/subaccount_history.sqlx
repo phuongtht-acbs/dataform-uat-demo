@@ -85,7 +85,7 @@ js {
         
         ${func.joinHistory(ref("gold", "customer_history"), "c", "s.cust_cd", "cust_cd", "target_date")}
         ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "target_date")}
-        WHERE s.is_current
+        WHERE target_date >= DATE(s.valid_from) AND (s.valid_to IS NULL OR target_date < DATE(s.valid_to))
     )
   `;
 
@@ -106,6 +106,7 @@ pre_operations {
       : `(SELECT MAX(${target_date_col}) FROM ${target_date_source})`
     }
   );
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
 WITH
