@@ -31,10 +31,21 @@ js {
     "BRKTBROKER__ACCO_STS": { 1: "Open", 2: "Close" },
     "BRKTBROKER__EMPLOYEE_TYPE": { 1: "Thử việc", 2: "Chính thức", 3: "CTV" },
 
-    // --- CORTCASH_MOVEMENT Metadata (New) ---
+    // --- CORTCASH_MOVEMENT Metadata ---
     "CORTCASH_MOVEMENT__ACCOUNT_TYPE": { 1: "Cash", 2: "Margin" },
     "CORTCASH_MOVEMENT__TRADE_TYPE": { 1: "Debit", 2: "Credit" },
-    "CORTCASH_MOVEMENT__STATUS": { 0: "Chưa duyệt", 1: "Đã duyệt", 9: "Đã hủy" }
+    "CORTCASH_MOVEMENT__STATUS": { 0: "Chưa duyệt", 1: "Đã duyệt", 9: "Đã hủy" },
+  
+    // --- MRGTDEBIT_CONTRACT Metadata ---
+    "MRGTDEBIT_CONTRACT__DEBIT_TYPE": { 1: "Margin", 2: "TN" },
+    "MRGTDEBIT_CONTRACT__CONTRACT_TYPE": { 0: "New", 1: "Hợp đồng đáo hạn" },
+    "MRGTDEBIT_CONTRACT__LOAN_TYPE": { 0: "Giải ngân mua", 1: "Giải ngân đặc biệt", 2: "Giải ngân trả lãi", 3: "Giải ngân rút tiền", 4: "Giải ngân ký quỹ PS" },
+    "MRGTDEBIT_CONTRACT__DEBTTYPE_ID": { 0: "Giải ngân mua", 1: "Giải ngân đặc biệt", 2: "Giải ngân trả lãi", 3: "Giải ngân rút tiền" },
+    "MRGTDEBIT_CONTRACT__STATUS": { 0: "Chưa duyệt", 1: "Đã duyệt", 2: "Đã kết thúc", 3: "Gia hạn chờ duyệt", 5: "Đã tất toán", 9: "Đã huỷ" },
+    "MRGTDEBIT_CONTRACT__INT_TYPE": { 1: "Là lãi cố định", 2: "Lãi bậc thang theo tuổi nợ", 3: "Lãi bậc thang theo dư nợ" },
+    "MRGTDEBIT_CONTRACT__CALUCATE": { 1: "Ngày", 2: "Tháng", 3: "Năm 360 ngày", 4: "Năm 365 ngày" },
+    "MRGTDEBIT_CONTRACT__ROUND_TYPE": { 1: "Round", 2: "Round Up", 3: "Floor", 4: "Ceiling" },
+    "MRGTDEBIT_CONTRACT__DECIMAL_POINT": { "-3": "Three Frac Point", "-2": "Two Frac Point", "-1": "One Frac Point", 0: "Đơn vị", 1: "Chục", 2: "Trăm", 3: "Nghìn" },
   };
 
   /**
