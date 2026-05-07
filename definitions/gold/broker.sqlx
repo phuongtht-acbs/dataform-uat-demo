@@ -49,7 +49,6 @@ SELECT
   approval_type_name,
 
   -- Metadata
-  valid_from AS effective_from_date,
   _ingested_at,
   _updated_at
 FROM

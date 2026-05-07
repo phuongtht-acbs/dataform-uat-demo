@@ -67,7 +67,6 @@ SELECT
     remarks,
     
     -- Timestamps
-    valid_from AS effective_from_date,
     _ingested_at,
     _updated_at
 FROM
