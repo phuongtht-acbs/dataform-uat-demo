@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "gold",
+    name: "cash_movement",
+    description: "Bảng thông tin giao dịch tiền đã được denormalized.",
+    tags: ["gold", "cash_movement", "fact"],
+    uniqueKey: ["cash_movement_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        clusterBy: ["sub_acco_no", "cust_no"]
+    },
+}
+
 js {
   const source_layer = "silver";
   const source_table = "fact_cash_movement";
@@ -14,68 +27,6 @@ js {
     "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
     "internal_balance_code", "doc", "remarks", "memo"
   ];
-}
-
-config {
-    type: "incremental",
-    schema: "gold",
-    name: "cash_movement",
-    description: "Bảng thông tin giao dịch tiền đã được denormalized.",
-    tags: ["gold", "cash_movement", "fact"],
-    uniqueKey: ["cash_movement_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        clusterBy: ["sub_acco_no", "cust_no"]
-    },
-    columns: {
-        // Key và trường partition và metadata
-        _ingested_at: "Thời điểm bản ghi được đưa vào Gold layer",
-        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Gold layer",
-        cash_movement_key: "Khóa chính của bảng Fact, sinh ra từ hash của prefix 'VGaia', allo_date và ref_no",
-        business_date: "Ngày nghiệp vụ dùng để partition dữ liệu, lấy từ allo_date của hệ thống nguồn",
-
-        // Thông tin giao dịch
-        allo_date: "Ngày hạch toán giao dịch. Kết hợp cùng ref_no để xác định tính duy nhất",
-        ref_no: "Số tham chiếu duy nhất của giao dịch trong ngày",
-        is_deleted: "Cờ đánh dấu dữ liệu đã bị xóa từ nguồn (9: Deleted)",
-        entry_date: "Ngày nhập liệu giao dịch vào hệ thống",
-        approvement_id: "ID định danh việc phê duyệt giao dịch",
-        group_category: "Phân loại nhóm nghiệp vụ của giao dịch",
-        task_cd: "Mã tác vụ hoặc mã loại giao dịch cụ thể",
-        src_date: "Ngày phát sinh tại nguồn dữ liệu gốc",
-        src_no: "Số tham chiếu tại nguồn dữ liệu gốc",
-        src_transaction_cd: "Đơn vị giao dịch của khách hàng",
-        transaction_cd: "Đơn vị giao dịch nơi thực hiện nghiệp vụ",
-
-        // Các thông tin về tiền
-        curr_cd: "Mã loại tiền tệ của giao dịch",
-        begin_amount: "Số dư tiền trước khi thực hiện giao dịch",
-        amount: "Số tiền phát sinh của giao dịch",
-        amount_type: "Loại tác động số tiền (D: Debit - Ghi nợ, C: Credit - Ghi có)",
-        trade_type: "Mã loại giao dịch (1: Debit, 2: Credit)",
-        trade_type_name: "Tên loại giao dịch được tra cứu từ bảng dim_attribute_lookup",
-        after_amount: "Số dư tiền sau khi thực hiện giao dịch",
-
-        // Status & Attributes
-        status: "Mã trạng thái của giao dịch",
-        status_name: "Tên trạng thái giao dịch (ví dụ: Đã duyệt, Đã hủy)",
-        util_cd: "Mã công cụ hoặc tiện ích đi kèm giao dịch",
-        util_cash_id: "ID định danh dòng tiền tiện ích",
-        internal_balance_code: "Mã hạch toán tài khoản nội bộ",
-        doc: "Thông tin chứng từ liên quan",
-        remarks: "Ghi chú vắn tắt về giao dịch",
-        memo: "Diễn giải chi tiết nội dung giao dịch",
-
-        // History Keys
-        sub_acco_no: "Số hiệu tiểu khoản phát sinh giao dịch",
-        subaccount_history_key: "Khóa liên kết đến phiên bản lịch sử tiểu khoản (subaccount_history) có hiệu lực tại thời điểm allo_date",
-        
-        cust_no: "Số tài khoản khách hàng sở hữu giao dịch",
-        customer_history_key: "Khóa liên kết đến phiên bản lịch sử khách hàng (customer_history) có hiệu lực tại thời điểm allo_date",
-        
-        broker_cd: "Mã nhân viên môi giới quản lý tiểu khoản tại thời điểm giao dịch",
-        broker_history_key: "Khóa liên kết đến phiên bản lịch sử môi giới (broker_history) có hiệu lực tại thời điểm allo_date",
-    }
 }
 
 pre_operations {
