@@ -1,0 +1,150 @@
+config {
+    type: "incremental",
+    schema: "silver",                                   // <-- 1. EDIT: Target schema
+    name: "dim_debit_contract",                         // <-- 2. EDIT: Target table name
+    uniqueKey: ["dim_debit_contract_key"],              // <-- 3. EDIT: Surrogate key name
+    tags: ["silver", "dimension", "daily", "debit_contract"], // <-- 4. EDIT: Tag list
+    bigquery: {
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
+    }
+}
+
+js {
+  // ============================================================================
+  // 1. SOURCE CONFIGURATION FORM (Edit this section for each new dimension)
+  // ============================================================================
+  const dim_config = {
+    source_schema: "silver",                // Source staging schema
+    source_table: "stage_mrgtdebit_contract_hist", // Source staging table name
+    
+    natural_key: "contract_no",             // The business identifier 
+    tech_key: "contract_no",                // The technical ID used to deduplicate 
+    partition_col: "business_date",         // The date column from the source table
+    surrogate_key: "dim_debit_contract_key" // MUST match the uniqueKey in the config block
+  };
+
+  // 2. List of business columns to track and insert
+  const dim_cols = [
+    "contract_no", "allo_date", "ref_no", "parent_date", "parent_no", 
+    "sub_acco_no", "cust_group_id", "contr_date_from", 
+    "contr_date_to", "begin_int_date", "debit_type", "amount", 
+    "in_rate", "out_rate", "min_interest", "manager_in_rate", 
+    "manager_out_rate", "min_manager", "free_interest_days", "source_cd", 
+    "contract_type", "last_extend_date", "extend_count", "transaction_cd", 
+    "calucate", "decimal_point", "round_type", "int_config_id", "loan_type", 
+    "debttype_id", "int_type", "status", "remarks", "is_deleted"
+  ];
+
+  // ============================================================================
+  // DO NOT EDIT BELOW THIS LINE - AUTOMATED TEMPLATE LOGIC
+  // ============================================================================
+
+  const cur_dim_cols = [
+    { name: dim_config.natural_key, type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: dim_config.surrogate_key, type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  
+  SET target_date = ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(${dim_config.partition_col}) FROM ${ref(dim_config.source_schema, dim_config.source_table)})`
+  };
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+${when(!incremental(), `
+-- 1. Full Refresh Path: Lead-Lag Logic
+WITH all_history AS (
+    SELECT
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${dim_config.partition_col},
+        * EXCEPT(${dim_config.partition_col}, _ingested_at, _updated_at, _hash_key)
+    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ${dim_config.natural_key}, ${dim_config.partition_col} ORDER BY ${dim_config.tech_key} DESC
+    ) = 1
+),
+deduped_history AS (
+    SELECT 
+        *,
+        LAG(record_hash) OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.partition_col}) AS prev_hash
+    FROM all_history
+),
+filtered_changes AS (
+    SELECT * FROM deduped_history 
+    WHERE prev_hash IS NULL OR record_hash != prev_hash
+),
+scd2_rebuild AS (
+    SELECT
+        *,
+        ${dim_config.partition_col} AS valid_from_date,
+        LEAD(${dim_config.partition_col}) OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.partition_col}) AS valid_to_date
+    FROM filtered_changes
+)
+SELECT
+    run_time AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash([dim_config.natural_key, "CAST(valid_from_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    target_date AS latest_target_date,
+    CAST(valid_from_date AS TIMESTAMP) AS valid_from,
+    CAST(valid_to_date AS TIMESTAMP) AS valid_to,
+    (valid_to_date IS NULL) AS is_current,
+    * EXCEPT(${dim_config.partition_col}, prev_hash, valid_from_date, valid_to_date)
+FROM scd2_rebuild
+`)}
+
+${when(incremental(), `
+-- 2. Incremental Path: Comparison Logic
+WITH staging_data AS (
+    SELECT
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${dim_cols.join(",\n        ")}
+    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+    WHERE ${dim_config.partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.tech_key} DESC) = 1
+),
+current_dim AS (
+    ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
+)
+SELECT
+    COALESCE(cur._ingested_at, run_time) AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash(["stg." + dim_config.natural_key, "CAST(target_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    target_date AS latest_target_date,
+    CAST(target_date AS TIMESTAMP) AS valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
+    true AS is_current,
+    stg.*
+FROM staging_data AS stg
+LEFT JOIN current_dim AS cur ON stg.${dim_config.natural_key} = cur.${dim_config.natural_key}
+WHERE cur.${dim_config.natural_key} IS NULL OR stg.record_hash != cur.record_hash
+`)}
+
+post_operations {
+  ${when(incremental(), `
+  MERGE ${self()} AS t
+  USING (
+    SELECT
+      ${dim_config.natural_key},
+      ${func.generateHash(dim_cols)} AS record_hash
+    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+    WHERE ${dim_config.partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.tech_key} DESC) = 1
+  ) AS src
+  ON t.${dim_config.natural_key} = src.${dim_config.natural_key}
+  AND t.is_current = true AND t.record_hash != src.record_hash
+  WHEN MATCHED THEN 
+    UPDATE SET
+      t._updated_at = run_time,
+      t.valid_to = CAST(target_date AS TIMESTAMP),
+      t.is_current = false;
+  `)}
+}

@@ -1,0 +1,192 @@
+--| =====================================================================================
+--| SILVER STAGING TEMPLATE
+--| =====================================================================================
+--| Instructions for adapting this file for a new table:
+--| 1. Go through the `js` block and update variables in STEP 1 to STEP 5.
+--| 2. Update the `config` block in STEP 6.
+--| 3. The `pre_operations` and SQL logic below the `config` block are highly dynamic 
+--|    and generally DO NOT need to be changed unless you have specific custom logic.
+--| ===================================================================================== 
+
+js {
+    // ===========================================================================
+    // STEP 1: Define Source & Target Configuration
+    // ===========================================================================
+    const source_table = "MRGTDEBIT_CONTRACT_HIST"; // The exact name of the Bronze table
+    const source_partition_col = "BUSINESS_DATE";   // The partition column in the Bronze table
+    const target_partition_col = "business_date";   // The desired partition column name in Silver
+
+    // ===========================================================================
+    // STEP 2: Define Grain & Deduplication Logic
+    // ===========================================================================
+    // unique_key_cols: The combination of columns that makes a single row unique (the grain).
+    // This is used to generate the `_hash_key` and for the QUALIFY ROW_NUMBER() partition.
+    const unique_key_cols = ["ALLO_DATE", "REF_NO", "BUSINESS_DATE"]; 
+    
+    // dedupe_order_by: How to choose the "latest" or "best" record if duplicates exist.
+    // Usually ordered by an update timestamp or ingest time descending.
+    const dedupe_order_by = [
+        { field: "UPD_DATE_TIME", sort: "DESC" },
+        { field: "LastUpdate_DT", sort: "DESC" }
+    ];
+
+    // ===========================================================================
+    // STEP 3: Categorize Columns for Automatic Casting & Cleaning
+    // ===========================================================================
+    // Place every column from your source schema into exactly ONE of the arrays below.
+    // The dynamic SQL will automatically cast them to the correct BigQuery data type.
+    
+    const date_cols = [
+        "BUSINESS_DATE", "ALLO_DATE", "CONTR_DATE_FROM", "CONTR_DATE_TO", 
+        "BEGIN_INT_DATE", "LAST_PAYED_DATE", "LAST_EXTEND_DATE"
+    ];
+    
+    // boolean_cols require special mapping if they come in as numbers/strings (e.g., 9 = deleted)
+    const boolean_cols = [
+        { source: "DEL_CD", field_name: "is_deleted", true_value: 9 }
+    ];
+    
+    const string_cols = [
+        "SUB_ACCO_NO", "SOURCE_CD", "TRANSACTION_CD", "REMARKS", 
+        "APPROVED_USER_ID", "REG_USER_ID", "UPD_USER_ID"
+    ];
+    
+    const integer_cols = [
+        "REF_NO", "PARENT_DATE", "PARENT_NO", "SUB_ACCO_CD", "CUST_GROUP_ID", 
+        "DEBIT_TYPE", "CONTRACT_TYPE", "EXTEND_COUNT", "CALUCATE", "DECIMAL_POINT", 
+        "ROUND_TYPE", "INT_CONFIG_ID", "LOAN_TYPE", "DEBTTYPE_ID", "INT_TYPE", "STATUS"
+    ];
+    
+    const numeric_cols = [
+        "AMOUNT", "PAYED_AMOUNT", "PAYED_INTEREST", "DUE_INTEREST", "PAYED_MANAGER", 
+        "DUE_MANAGER", "IN_RATE", "OUT_RATE", "MIN_INTEREST", "MANAGER_IN_RATE", 
+        "MANAGER_OUT_RATE", "MIN_MANAGER", "FREE_INTEREST_DAYS"
+    ];
+
+    // cleaned_cols: Timestamp or other columns that just pass through without casting/cleaning
+    const cleaned_cols = ["APPROVED_DATE_TIME", "REG_DATE_TIME", "UPD_DATE_TIME", "LastUpdate_DT"];
+    
+    // ===========================================================================
+    // STEP 4: Custom Derived Columns (Optional)
+    // ===========================================================================
+    // Add any specific business logic or composite keys here. 
+    // Example: Creating a composite contract_no from ALLO_DATE and REF_NO
+    const custom_logic_cols = [
+        `CONCAT(CAST(${func.cleanNullDate('ALLO_DATE')} AS STRING), '-', CAST(REF_NO AS STRING)) AS contract_no`
+    ];
+
+    // ===========================================================================
+    // STEP 5: Compile Final Output Array (DO NOT CHANGE)
+    // ===========================================================================
+    // This dynamically builds the SELECT list based on the arrays you filled above.
+    const has_partition_col = date_cols.some(col => col.toLowerCase() === target_partition_col.toLowerCase());
+    const output_cols = [
+        "_hash_key",
+        "contract_no", // Make sure to add the alias of your custom column here so it gets selected
+        ...(has_partition_col ? [] : [target_partition_col]),
+        ...date_cols,
+        ...string_cols, 
+        ...integer_cols, 
+        ...numeric_cols, 
+        ...cleaned_cols,
+        ...boolean_cols.map(b => b.field_name)
+    ].map(col => col.toLowerCase());
+}
+
+    --| ===========================================================================
+    --| STEP 6: Configure Dataform Metadata
+    --| ===========================================================================
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_mrgtdebit_contract_hist", // Change to match your target table name
+    tags: ["silver", "stage", "daily", "debit_contract"], // Update domain tags (e.g., "debit_contract")
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: 'business_date',
+        updatePartitionFilter: `business_date = target_date`
+    }
+}
+
+    --| ===========================================================================
+    --| PRE-OPERATIONS: Dynamic Incremental Date Logic (LEAVE AS IS)
+    --| ===========================================================================
+pre_operations {
+  -- 1. Khai báo biến
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+
+  -- 2. Logic xác định thời gian dựa trên loại hình chạy (Incremental vs Full Refresh)
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref("bronze", source_table)})`
+      };`
+    : `SET start_date = ${dataform.projectConfig.vars.start_date 
+        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
+        : `(SELECT MIN(${source_partition_col}) FROM ${ref("bronze", source_table)})`
+      };
+      SET end_date = ${dataform.projectConfig.vars.end_date 
+        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref("bronze", source_table)})`
+      };
+      SET target_date = NULL; -- Đảm bảo updatePartitionFilter không bị lỗi khi biên dịch`
+  }
+
+  -- 3. Drop table khi Full Refresh
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+    --| ===========================================================================
+    --| CORE SQL LOGIC (LEAVE AS IS)
+    --| This builds the dynamic staging view based on your JS variables above.
+    --| ===========================================================================
+WITH staging_data AS (
+    SELECT
+    ${[
+        // Generate Surrogate Hash Key
+        `${func.generateHash(unique_key_cols.map(c => `CAST(${c} AS STRING)`))} AS _hash_key`,
+        
+        // Inject custom business logic columns
+        ...custom_logic_cols,
+
+        // Ensure partition column exists and is cleaned
+        ...(has_partition_col ? [] : [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
+        
+        // Apply Data Type Casting
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")}
+    
+    FROM ${ref("bronze", source_table)}
+    
+    WHERE
+        ${incremental() 
+          ? `${source_partition_col} = target_date` 
+          : `${source_partition_col} BETWEEN start_date AND end_date`
+        }
+        
+    -- Deduplicate rows based on the unique keys and dedupe rules defined in JS
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ${unique_key_cols.join(", ")} 
+        ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+    ) = 1
+)
+
+SELECT
+    -- Metadata columns
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    
+    -- Dynamically select all defined columns
+    ${output_cols.map(col => `stg.${col}`).join(",\n    ")}
+    
+FROM staging_data AS stg
+-- Self-join on incremental runs to carry over the original ingestion time
+${when(incremental(), `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key AND target.${target_partition_col} = target_date`)}

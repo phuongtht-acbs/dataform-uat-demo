@@ -1,0 +1,93 @@
+config {
+    type: "incremental",
+    schema: "gold",
+    name: "debit_contract_daily_balance",
+    description: "Daily reporting fact table for debit contract balances, fully denormalized with dimension keys.",
+    tags: ["gold", "debit_contract", "fact"],
+    uniqueKey: ["debit_contract_daily_balance_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        clusterBy: ["contract_no", "sub_acco_no"]
+    }
+}
+
+js {
+  const source_layer = "silver";
+  const source_table = "fact_debit_contract_daily_balance";
+  const source_partition_col = "business_date";
+  const target_partition_col = "business_date";
+  
+  const hash_key_name = "debit_contract_daily_balance_key";
+
+  const fact_cols = [
+    "is_deleted", "amount", "payed_amount", "payed_interest", 
+    "due_interest", "payed_manager", "due_manager", "last_payed_date"
+  ];
+}
+
+pre_operations {
+  -- 1. Khai báo biến
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+
+  -- 2. Logic xác định thời gian
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };`
+    : `SET start_date = ${dataform.projectConfig.vars.start_date 
+        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
+        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+       SET end_date = ${dataform.projectConfig.vars.end_date 
+        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+       SET target_date = NULL;`
+  }
+
+  -- 3. Drop table khi Full Refresh
+  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+}
+
+WITH staging_data AS (
+    SELECT
+        -- 1. Fact Keys & Identifiers
+        f.${hash_key_name},
+        f.business_date,
+        f.contract_no,
+        f.sub_acco_no,
+        
+        -- 2. Inherited Surrogate Keys (SCD2 Linkage)
+        dc.debit_contract_history_key,
+        sub.subaccount_history_key,
+        sub.customer_history_key,
+        sub.broker_history_key,
+
+        -- 3. Factual Metrics
+        ${fact_cols.map(col => `f.${col}`).join(",\n        ")}
+
+    FROM ${ref(source_layer, source_table)} AS f
+    
+    -- Temporal join to Debit Contract History
+    ${func.joinHistory(ref("gold", "debit_contract_history"), "dc", "f.contract_no", "contract_no", "f.business_date")}
+    
+    -- Temporal join to Subaccount History (which also provides Customer and Broker keys)
+    ${func.joinHistory(ref("gold", "subaccount_history"), "sub", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
+    
+    WHERE 
+        ${incremental() 
+          ? `f.${source_partition_col} = target_date` 
+          : `f.${source_partition_col} BETWEEN start_date AND end_date`
+        }
+)
+
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.*
+FROM staging_data AS stg
+${when(incremental(), `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name} AND target.${target_partition_col} = target_date`)}

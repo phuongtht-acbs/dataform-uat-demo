@@ -1,0 +1,124 @@
+config {
+    type: "incremental",
+    schema: "gold",
+    name: "debit_contract_history",
+    description: "Full denormalized SCD Type 2 Debit Contract history.",
+    tags: ["gold", "debit_contract", "history"],
+    uniqueKey: ["debit_contract_history_key"],
+    bigquery: {
+        partitionBy: "DATE(valid_from)",
+        clusterBy: ['is_current']
+    }
+}
+
+js {
+  // 1. SQL-specific configuration
+  const natural_key = "contract_no";
+  const history_key = "debit_contract_history_key";
+
+  // 2. Explicitly list the fields we want to keep from the silver dimension
+  const source_table = ref("silver", "dim_debit_contract");
+
+  const source_cols = [
+    "allo_date", "ref_no", "parent_date", "parent_no", "sub_acco_cd", "sub_acco_no",
+    "cust_group_id", "contr_date_from", "contr_date_to", "begin_int_date",
+    "debit_type", "amount", "in_rate", "out_rate", "min_interest",
+    "manager_in_rate", "manager_out_rate", "min_manager", "free_interest_days",
+    "source_cd", "contract_type", "last_extend_date", "extend_count",
+    "transaction_cd", "calucate", "decimal_point", "round_type", "int_config_id",
+    "loan_type", "debttype_id", "int_type", "status", "remarks", "is_deleted"
+  ];
+
+  // 3. Explicitly list the enriched fields added via JOINS
+  const enriched_cols = [
+    "debit_type_name", "contract_type_name", "loan_type_name", "status_name",
+    "subaccount_history_key"
+  ];
+
+  // Combine both arrays for the comprehensive SCD2 record hash
+  const gold_cols = [...source_cols, ...enriched_cols];
+
+  // 4. Centralized Denormalization Logic
+  const denorm_query = `
+    SELECT
+        ${func.generateHash(gold_cols)} AS record_hash,
+        *
+    FROM (
+        SELECT
+            ${source_cols.map(col => `s.${col}`).join(",\n            ")},
+            
+            lkp_deb.attribute_name AS debit_type_name,
+            lkp_con.attribute_name AS contract_type_name,
+            lkp_loa.attribute_name AS loan_type_name,
+            lkp_sts.attribute_name AS status_name,
+            
+            sub.subaccount_history_key
+            
+        FROM ${source_table} AS s
+        
+        -- Joining to Lookup tables for descriptive names. 
+        -- Note: Cast to string is applied safely if staging loaded these as integers.
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_deb
+          ON lkp_deb.category = 'MRGTDEBIT_CONTRACT__DEBIT_TYPE'
+          AND CAST(s.debit_type AS STRING) = lkp_deb.attribute_code
+          
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con
+          ON lkp_con.category = 'MRGTDEBIT_CONTRACT__CONTRACT_TYPE'
+          AND CAST(s.contract_type AS STRING) = lkp_con.attribute_code
+          
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_loa
+          ON lkp_loa.category = 'MRGTDEBIT_CONTRACT__LOAN_TYPE'
+          AND CAST(s.loan_type AS STRING) = lkp_loa.attribute_code
+          
+        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
+          ON lkp_sts.category = 'MRGTDEBIT_CONTRACT__STATUS'
+          AND CAST(s.status AS STRING) = lkp_sts.attribute_code
+          
+        -- Temporal join to subaccount_history using the universal target_date logic
+        ${func.joinHistory(ref("gold", "subaccount_history"), "sub", "s.sub_acco_no", "sub_acco_no", "target_date")}
+        
+        WHERE target_date >= DATE(s.valid_from) AND (s.valid_to IS NULL OR target_date < DATE(s.valid_to))
+    )
+  `;
+
+  // Helper for getCurrentDim metadata
+  const cur_dim_cols = [
+    { name: natural_key, type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  
+  SET target_date = (
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(latest_target_date) FROM ${source_table})`
+    }
+  );
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+WITH
+  staging_hashed AS (${denorm_query}),
+  current_gold AS (${func.getCurrentDim(incremental(), self(), cur_dim_cols)})
+
+SELECT
+    ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash(["stg." + natural_key, "CAST(target_date AS STRING)"])} AS ${history_key},
+    CAST(target_date AS TIMESTAMP) AS valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
+    true AS is_current,
+    stg.*
+FROM staging_hashed AS stg
+LEFT JOIN current_gold AS cur ON stg.${natural_key} = cur.${natural_key}
+WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
+
+post_operations {
+  ${func.expireHistory(self(), natural_key, denorm_query)}
+}

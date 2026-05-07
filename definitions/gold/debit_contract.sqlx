@@ -1,0 +1,126 @@
+config {
+    type: "incremental",
+    schema: "gold",
+    name: "debit_contract",
+    description: "Current active state of Debit Contracts, combining static dimensional attributes with the latest accumulating balance facts.",
+    tags: ["gold", "debit_contract", "current"],
+    uniqueKey: ["contract_no"],
+    bigquery: {
+        partitionBy: "DATE(allo_date)",
+        clusterBy: ["sub_acco_no", "contract_no", "status"],
+    }
+}
+
+js {
+    const dim_table_ref = ref("gold", "debit_contract_history")
+    const cur_fact_table_ref = ref("silver", "fact_debit_contract_current_balance")
+    const unique_key_col = "contract_no"
+}
+
+pre_operations {
+  -- 1. Khai báo biến
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+
+  -- 2. Logic xác định thời gian
+    SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(last_fact_date) FROM ${cur_fact_table_ref})`
+      };
+
+  -- 3. Drop table khi Full Refresh
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+WITH current_dim AS (
+    -- 1. Get the currently active version of the contract's rules/attributes
+    SELECT *
+    FROM ${dim_table_ref}
+    WHERE is_current
+),
+
+current_fact AS (
+    -- 2. Get the absolute latest balance snapshot for each contract
+    -- (This is fast because it's querying the accumulating snapshot table)
+    SELECT *
+    FROM ${cur_fact_table_ref}
+    WHERE last_fact_date = target_date
+)
+
+SELECT
+    -- ==========================================
+    -- 0. SYSTEM STATUS & METADATA
+    -- ==========================================
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    dim.is_deleted,
+    fact.last_balance_date,
+
+    -- ==========================================
+    -- 1. IDENTIFIERS & KEYS
+    -- ==========================================
+    dim.contract_no,
+    dim.sub_acco_no,
+    dim.cust_group_id,
+
+    -- ==========================================
+    -- 2. DATES & LINEAGE
+    -- ==========================================
+    dim.allo_date,
+    dim.ref_no,
+    dim.parent_date,
+    dim.parent_no,
+    dim.contr_date_from,
+    dim.contr_date_to,
+    dim.begin_int_date,
+    dim.last_extend_date,
+    dim.remarks,
+    
+    -- ==========================================
+    -- 3. CATEGORICAL & LOOKUP ATTRIBUTES
+    -- ==========================================
+    dim.debit_type,
+    dim.debit_type_name,
+    dim.contract_type,
+    dim.contract_type_name,
+    dim.loan_type,
+    dim.loan_type_name,
+    dim.debttype_id,
+    dim.status,
+    dim.status_name,
+    dim.int_type,
+    dim.source_cd,
+    dim.transaction_cd,
+
+    -- ==========================================
+    -- 4. RATES & CONFIGURATIONS
+    -- ==========================================
+    dim.in_rate,
+    dim.out_rate,
+    dim.min_interest,
+    dim.manager_in_rate,
+    dim.manager_out_rate,
+    dim.min_manager,
+    dim.free_interest_days,
+    dim.extend_count,
+    dim.calucate,
+    dim.decimal_point,
+    dim.round_type,
+    dim.int_config_id,
+
+    -- ==========================================
+    -- 5. LATEST METRICS & BALANCES (From Fact)
+    -- ==========================================
+    dim.amount,
+    fact.payed_amount, 
+    fact.payed_interest,
+    fact.due_interest,
+    fact.payed_manager,
+    fact.due_manager,
+    fact.last_payed_date,
+
+FROM current_dim AS dim
+INNER JOIN current_fact AS fact ON dim.${unique_key_col} = fact.${unique_key_col}
+${when(incremental(), `LEFT JOIN ${self()} AS target ON dim.${unique_key_col} = target.${unique_key_col}`)}

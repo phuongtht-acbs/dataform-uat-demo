@@ -1,0 +1,126 @@
+/* =====================================================================================
+   SILVER ACCUMULATING FACT TEMPLATE (CURRENT STATE)
+   =====================================================================================
+   Instructions for adapting this file for a new table:
+   1. Update the `config` block.
+   2. Go through the `js` block and update variables in STEP 1 to STEP 4.
+   3. The `pre_operations` and SQL logic below the `js` block are highly dynamic 
+      and generally DO NOT need to be changed.
+   ===================================================================================== */
+
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "fact_debit_contract_current_balance",              // <-- EDIT: Target table name
+    description: "Accumulating fact table storing the latest balance snapshot.",
+    tags: ["silver", "debit_contract", "fact", "current"],    // <-- EDIT: Tags
+    
+    uniqueKey: ["contract_no"],                               // <-- EDIT: The business identifier to UPSERT on
+    
+    bigquery: {
+        partitionBy: "DATE(allo_date)",                       // <-- EDIT: Must match `target_partition_col`
+        clusterBy: ["sub_acco_no", "contract_no", "status"],  // <-- EDIT: Common lookup fields
+        
+        // Dynamically prunes partitions during MERGE. DO NOT CHANGE the array name.
+        updatePartitionFilter: "DATE(allo_date) IN UNNEST(affected_dates)" // <-- EDIT: Match target_partition_col
+    }
+}
+
+js {
+  // ===========================================================================
+  // STEP 1: Define Source Configuration
+  // ===========================================================================
+  const source_layer = "silver";
+  const source_table = "fact_debit_contract_daily_balance";
+  const source_partition_col = "business_date"; // The daily snapshot date coming from staging
+
+  // ===========================================================================
+  // STEP 2: Define Grain & Partitioning
+  // ===========================================================================
+  const unique_key_col = "contract_no";       // The unique identifier for the entity
+  const target_partition_col = "allo_date";   // A static date (e.g., origination date) for partition mapping
+
+  // ===========================================================================
+  // STEP 3: Define Ordering Logic for "Latest" Record
+  // ===========================================================================
+  // Note: Này chỉ có tác dụng khi chạy theo full-refresh
+  const order_by_logic = `${source_partition_col} DESC`;
+
+  // ===========================================================================
+  // STEP 4: Define Factual Columns to Track
+  // ===========================================================================
+  // Note: Include factual fields
+  const fact_cols = [
+    "allo_date","ref_no","sub_acco_no","status", 
+    "is_deleted","amount","payed_amount","payed_interest",
+    "due_interest","payed_manager","due_manager","last_payed_date",
+  ];
+}
+
+/* ===========================================================================
+   PRE-OPERATIONS: Dynamic Partition Discovery (LEAVE AS IS)
+   =========================================================================== */
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+  
+  -- Array to hold only the specific partitions affected in the current incremental run
+  DECLARE affected_dates ARRAY<DATE>;
+
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+      
+      -- Discover all distinct static partitions (e.g. allo_date) present in today's batch
+      SET affected_dates = (
+        SELECT COALESCE(ARRAY_AGG(DISTINCT DATE(${target_partition_col}) IGNORE NULLS), [])
+        FROM ${ref(source_layer, source_table)}
+        WHERE ${source_partition_col} = target_date
+      );
+      `
+    : `SET start_date = ${dataform.projectConfig.vars.start_date 
+        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
+        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+       SET end_date = ${dataform.projectConfig.vars.end_date 
+        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+       SET target_date = NULL;`
+  }
+
+  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+}
+
+/* ===========================================================================
+   CORE SQL LOGIC (LEAVE AS IS)
+   =========================================================================== */
+WITH staging_data AS (
+    SELECT
+        ${unique_key_col},
+        ${source_partition_col},
+        ${fact_cols.join(",\n        ")}
+    FROM ${ref(source_layer, source_table)}
+    WHERE 
+        ${incremental() 
+          ? `${source_partition_col} = target_date` 
+          : `${source_partition_col} BETWEEN start_date AND end_date`
+        }
+    -- Deduplicate để lấy dữ liệu contract mới nhất
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${unique_key_col} ORDER BY ${order_by_logic}) = 1
+)
+
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.${source_partition_col} AS last_fact_date,    
+    stg.* EXCEPT(${source_partition_col})
+    
+FROM staging_data AS stg
+
+-- Self-join on incremental runs to carry over historical ingestion metadata
+${when(incremental(), `LEFT JOIN ${self()} AS target ON stg.${unique_key_col} = target.${unique_key_col}`)}
