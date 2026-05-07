@@ -55,13 +55,10 @@ pre_operations {
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
   
-  ${incremental() 
-    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
-        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${dim_config.partition_col}) FROM ${ref(dim_config.source_schema, dim_config.source_table)})`
-      };`
-    : `SET target_date = NULL;`
-  }
+  SET target_date = ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT MAX(${dim_config.partition_col}) FROM ${ref(dim_config.source_schema, dim_config.source_table)})`
+  };
 
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
@@ -99,6 +96,7 @@ SELECT
     run_time AS _ingested_at,
     run_time AS _updated_at,
     ${func.generateHash([dim_config.natural_key, "CAST(valid_from_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    target_date AS latest_target_date,
     CAST(valid_from_date AS TIMESTAMP) AS valid_from,
     CAST(valid_to_date AS TIMESTAMP) AS valid_to,
     (valid_to_date IS NULL) AS is_current,
@@ -123,6 +121,7 @@ SELECT
     COALESCE(cur._ingested_at, run_time) AS _ingested_at,
     run_time AS _updated_at,
     ${func.generateHash(["stg." + dim_config.natural_key, "CAST(target_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    target_date AS latest_target_date,
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
     true AS is_current,

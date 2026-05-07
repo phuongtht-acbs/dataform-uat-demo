@@ -16,10 +16,6 @@ js {
   const natural_key = "sub_acco_no";
   const history_key = "subaccount_history_key";
 
-  // Configuration for deriving the target_date
-  const target_date_col = "snapshot_date";
-  const target_date_source = ref("silver", "stage_cortsub_account");
-
   // 2. Explicitly list the fields we want to keep from the silver dimension
   const source_table = ref("silver", "dim_subaccount");
   const source_cols = [
@@ -103,7 +99,7 @@ pre_operations {
   SET target_date = (
     ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(${target_date_col}) FROM ${target_date_source})`
+      : `(SELECT MAX(latest_target_date) FROM ${source_table})`
     }
   );
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
