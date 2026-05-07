@@ -1,3 +1,15 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "fact_subaccount_daily_asset_value",
+    tags: ["silver", "asset_value", "fact", "daily"],
+    uniqueKey: ["subaccount_daily_asset_value_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+    }
+}
+
 js {
   const source_layer = "silver";
   const source_table = "stage_cortasset";
@@ -22,18 +34,6 @@ js {
     "t0_buy_amt", "t1_buy_amt", "t2_buy_amt", "t0_sell_amt", "t1_sell_amt", "t2_sell_amt", 
     "dividend_cash_market_amt", "dividend_sec_market_amt", "nav_bi"
   ];
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "fact_subaccount_daily_asset_value",
-    tags: ["silver", "asset_value", "fact", "daily"],
-    uniqueKey: ["subaccount_daily_asset_value_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-    }
 }
 
 pre_operations {

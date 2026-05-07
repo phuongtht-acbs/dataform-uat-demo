@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "fact_cash_movement",
+    description: "Bảng Fact lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
+    tags: ["silver", "fact", "daily", "cash_movement"],
+    uniqueKey: ["cash_movement_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+    }
+}
+
 js {
   // 1. CẤU HÌNH NGUỒN DỮ LIỆU
   const source_layer = "silver"
@@ -16,19 +29,6 @@ js {
     "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
     "internal_balance_code", "doc", "remarks", "memo"
   ];
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "fact_cash_movement",
-    description: "Bảng Fact lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
-    tags: ["silver", "fact", "daily", "cash_movement"],
-    uniqueKey: ["cash_movement_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-    }
 }
 
 pre_operations {
