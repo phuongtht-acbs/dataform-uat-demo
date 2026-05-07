@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_subaccount",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
+    },
+    description: "Consolidated Subaccount staging. Uses Range 'As-Of' logic to join core snapshots efficiently without Cartesian explosion.",
+    tags: ["silver", "stage", "subaccount", "daily"]
+}
+
 js {
   // 1. cortsub_account columns
   const sub_account_cols = [
@@ -18,19 +31,6 @@ js {
 
   // 3. cortasset columns
   const asset_cols = ['cust_group_id']
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_subaccount",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "snapshot_date",
-        updatePartitionFilter: "snapshot_date = target_date"
-    },
-    description: "Consolidated Subaccount staging. Uses Range 'As-Of' logic to join core snapshots efficiently without Cartesian explosion.",
-    tags: ["silver", "stage", "subaccount", "daily"]
 }
 
 pre_operations {

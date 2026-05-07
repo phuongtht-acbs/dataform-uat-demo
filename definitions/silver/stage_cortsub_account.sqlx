@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_cortsub_account",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
+    },
+    description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp.",
+    tags: ["silver", "stage", "subaccount", "daily"],
+}
+
 js {
     // 1. THÔNG TIN NGUỒN TỪ BRONZE
     const source_table = "CORTSUB_ACCOUNT";
@@ -59,72 +72,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_cortsub_account",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "snapshot_date",
-        updatePartitionFilter: "snapshot_date = target_date"
-    },
-    description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp.",
-    tags: ["silver", "stage", "subaccount", "daily"],
-    columns: {
-        // Audit & Keys
-        _hash_key: "Khóa chính (Surrogate Key) sinh ra từ hash của SUB_ACCO_CD",
-        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
-        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
-        snapshot_date: "Ngày snapshot dữ liệu (ánh xạ từ InsertDate)",
-
-        // Keys & Identifiers
-        sub_acco_cd: "Tự động tăng toàn bảng (Dùng để deduplicate)",
-        is_deleted: "Dữ liệu đã xóa hay chưa",
-        cust_cd: "Mã định danh khách hàng chủ sở hữu",
-
-        // Classification & Types
-        acco_type: "1-CASH (01-->09); 2-MARGIN (10-->19); 3-BANKING (20-->29); 4-SHORTSALE (30-->39); 5-TK QUỸ MỞ (40-->49); 6-DERIVATIVES (50-->59); 7-ORTHER (60 --> 69); 9-ALGOS (90 --> 99)",
-        algos_type: "Loại tiểu khoản Algos (CopyTrade, Chiến thuật)",
-        type_flg: "Mô hình tiểu khoản (TK thường, TK tổng OMS, Leader/Copier...)",
-        curr_cd: "Mã loại tiền tệ",
-        sub_acco_no: "Số hiệu tiểu khoản (Ví dụ: 014C123456.XY)",
-
-        // Banking Details
-        bank_cd: "Mã ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3, 6)",
-        bank_branch_cd: "Mã chi nhánh ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3, 6)",
-        bank_acco_number: "Số tài khoản ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3, 6)",
-        bank_acco_name: "Tên chủ tài khoản ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3)",
-        bank_acco_id_no: "Số giấy tờ định danh chủ tài khoản ngân hàng (Chỉ có ý nghĩa khi ACCO_TYPE=3)",
-        bank_flg: "Cờ phong tỏa/đồng bộ số dư ngân hàng (Mặc định: 1)",
-
-        // Flags & Logic
-        not_update_by_cust: "Cờ chặn khách hàng cập nhật thông tin tiểu khoản",
-        contract_no: "Số hợp đồng liên kết",
-        source_channel: "Kênh tạo dữ liệu (1: Back Office; 2: Front Office; 3: Floor Trading)",
-        broker_cd: "Mã nhân viên môi giới quản lý",
-        acco_sts: "Trạng thái tài khoản (1-Open, 2-Close)",
-        acco_flg: "Cờ tài khoản mặc định (0: Không mặc định, 1: Mặc định)",
-        trade_acco_no: "Mã số tài khoản giao dịch (Chỉ áp dụng cho loại ACCO_TYPE = 6)",
-        status: "Trạng thái phê duyệt (0-Pending, 1-Approved)",
-
-        // Khác
-        source_cd: "Nguồn tiểu khoản (CASH, LOCAL, BANK_CD, SHORTSALE, DERIVATIVES...)",
-        source_sname: "Tên chi tiết nguồn tiểu khoản",
-        open_date: "Ngày mở tiểu khoản",
-        close_date: "Ngày đóng tiểu khoản",
-        reopen_date: "Ngày mở lại tiểu khoản đã đóng",
-        remarks: "Ghi chú bổ sung",
-
-        // Audit từ nguồn và snapshot
-        reg_date_time: "Thời điểm đăng ký bản ghi",
-        reg_user_id: "Người tạo bản ghi",
-        upd_date_time: "Thời điểm cập nhật bản ghi",
-        upd_user_id: "Người cập nhật bản ghi",
-        insertdate: "Ngày snapshot dữ liệu",
-        inserttime: "Thời điểm snapshot dữ liệu",
-    }
 }
 
 pre_operations {

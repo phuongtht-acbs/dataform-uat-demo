@@ -1,3 +1,15 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_cortasset_ext",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+    },
+    description: "Bảng Staging chuẩn hóa thông tin tài sản mở rộng (CORTASSET_EXT). Sử dụng business_date làm cột phân vùng chính.",
+    tags: ["silver", "stage", "subaccount", "daily"]
+}
 js {
     // 1. THÔNG TIN NGUỒN TỪ BRONZE
     const source_table = "CORTASSET_EXT";
@@ -66,19 +78,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_cortasset_ext",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-    },
-    description: "Bảng Staging chuẩn hóa thông tin tài sản mở rộng (CORTASSET_EXT). Sử dụng business_date làm cột phân vùng chính.",
-    tags: ["silver", "stage", "subaccount", "daily"]
 }
 
 pre_operations {

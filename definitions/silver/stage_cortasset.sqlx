@@ -1,3 +1,15 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_cortasset",
+    tags: ["silver", "stage", "daily", "subaccount", "asset_value"],
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+    }
+}
+
 js {
     const source_table = "CORTASSET";
     const source_partition_col = "BUSINESS_DATE";
@@ -41,18 +53,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_cortasset",
-    tags: ["silver", "stage", "daily", "subaccount", "asset_value"],
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-    }
 }
 
 pre_operations {

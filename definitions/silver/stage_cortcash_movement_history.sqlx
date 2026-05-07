@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_cortcash_movement_history",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "business_date",
+        updatePartitionFilter: "business_date = target_date"
+        },
+    description: "Bảng Staging chuẩn hóa lịch sử giao dịch tiền của khách hàng từ hệ thống Core (CORTCASH_MOVEMENT_HISTORY). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo allo_date và ref_no.",
+    tags: ["silver", "stage", "cash_movement", "daily"],
+}
+
 js {
     // 1. THÔNG TIN NGUỒN TỪ BRONZE
     const source_table = "CORTCASH_MOVEMENT_HISTORY";
@@ -59,59 +72,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_cortcash_movement_history",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-        },
-    description: "Bảng Staging chuẩn hóa lịch sử giao dịch tiền của khách hàng từ hệ thống Core (CORTCASH_MOVEMENT_HISTORY). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp theo allo_date và ref_no.",
-    tags: ["silver", "stage", "cash_movement", "daily"],
-    columns: {
-        _hash_key: "",
-        _ingested_at: "",
-        _updated_at: "",
-        business_date: "Ngày partition dữ liệu, lấy từ allo_date",
-        allo_date: "Kết hợp cùng ref_no để ra key",
-        ref_no: "Kết hợp cùng allo_date để ra key",
-        is_deleted: "Dữ liệu đã xóa hay chưa",
-        cust_cd: "Mã định danh khách hàng",
-        cust_no: "Số tài khoản khách hàng",
-        sub_acco_cd: "Mã định danh tiểu khoản",
-        sub_acco_no: "Số tiểu khoản",
-        entry_date: "Ngày nhập liệu giao dịch",
-        approvement_id: "ID phê duyệt giao dịch",
-        group_category: "Phân loại nghiệp vụ",
-        task_cd: "Mã tác vụ/giao dịch",
-        src_date: "Ngày phát sinh nguồn",
-        src_no: "Số tham chiếu nguồn",
-        src_transaction_cd: "Đơn vị giao dịch khách hàng",
-        curr_cd: "Mã loại tiền tệ",
-        begin_amount: "Số dư đầu (Mục đích xử lý report, mặc định 0)",
-        amount: "Số tiền giao dịch (Mặc định 0)",
-        amount_type: "Loại số tiền (D: Debit, C: Credit)",
-        trade_type: "Loại giao dịch (1: Debit, 2: Credit)",
-        after_amount: "Số dư sau giao dịch (Mục đích xử lý report, mặc định 0)",
-        util_cd: "Mã công cụ/tiện ích",
-        util_cash_id: "ID tiền mặt tiện ích (Mặc định 0)",
-        status: "Trạng thái giao dịch (Mặc định 0)",
-        transaction_cd: "Đơn vị giao dịch nơi thực hiện",
-        internal_balance_code: "Mã tài khoản nội bộ",
-        doc: "Chứng từ liên quan",
-        remarks: "Ghi chú giao dịch",
-        memo: "Diễn giải chi tiết",
-        approved_date_time: "Thời điểm phê duyệt",
-        approved_user_id: "Người phê duyệt",
-        reg_date_time: "Thời điểm đăng ký bản ghi",
-        reg_user_id: "Người tạo bản ghi",
-        upd_date_time: "Thời điểm cập nhật bản ghi",
-        upd_user_id: "Người cập nhật bản ghi",
-    }
 }
 
 pre_operations {

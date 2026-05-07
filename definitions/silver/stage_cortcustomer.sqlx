@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_cortcustomer",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
+    },
+    description: "Bảng Staging lưu trữ lịch sử snapshot thông tin khách hàng. Dữ liệu được chuẩn hóa và lưu trữ lịch sử theo từng ngày.",
+    tags: ["silver", "stage", "customer", "daily"],
+}
+
 js {
     // 1. THÔNG TIN NGUỒN TỪ BRONZE
     const source_table = "CORTCUSTOMER";
@@ -65,88 +78,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_cortcustomer",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "snapshot_date",
-        updatePartitionFilter: "snapshot_date = target_date"
-    },
-    description: "Bảng Staging lưu trữ lịch sử snapshot thông tin khách hàng. Dữ liệu được chuẩn hóa và lưu trữ lịch sử theo từng ngày.",
-    tags: ["silver", "stage", "customer", "daily"],
-    columns: {
-        // Audit & Keys
-        _hash_key: "Khóa chính (Surrogate Key) sinh ra từ hash của CUST_CD",
-        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
-        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
-        snapshot_date: "Ngày snapshot dữ liệu (ánh xạ từ InsertDate)",
-
-        cust_cd: "Một khách hàng cust_no có thể có nhiều cust_cd",
-        is_deleted: "Dữ liệu đã xóa hay chưa",
-        cust_no: "Số tài khoản lưu ký, giao dịch",
-        transaction_cd: "Đơn vị giao dịch",
-        cust_family_name: "Họ khách hàng",
-        cust_given_name: "Tên khách hàng",
-        tax_code: "Mã số Thuế TNCN",
-        cust_type: "1: Cá nhân; 2: Tổ chức",
-        foreign_type: "1: Trong nước; 2: Nước ngoài",
-        birthday: "Ngày sinh",
-        sex: "1: Nam; 2: Nữ",
-        mobile_no: "Số điện thoại di động",
-        email_adrs: "Địa chỉ Email",
-        email_flg: "0:NO; 1:YES",
-        approval_cd: "Loại giấy tờ định danh (1-CMND, 2-Passport, 8-CCCD, ...)",
-        id_number: "Số ĐKSH (Số CMND/CCCD/Passport)",
-        issue_location: "Nơi cấp giấy tờ",
-        issue_date: "Ngày cấp (YYYYMMDD)",
-        expire_date: "Ngày hết hạn (YYYYMMDD)",
-        country_cd: "Mã quốc gia",
-        job: "Mã nghề nghiệp",
-        broker_cd: "Nhân viên chăm sóc",
-        introducer_cd: "Nhân viên giới thiệu",
-        department_cd: "Mã phòng kinh doanh",
-        com3_cust_type: "Nhóm hoa hồng",
-        pres_name: "Họ và tên người đại diện",
-        pres_birthday: "Ngày sinh của người đại diện",
-        pres_position: "Chức vụ người đại diện",
-        pres_country_cd: "Quốc tịch người đại diện",
-        pres_approval_cd: "Loại chứng thư người đại diện",
-        pres_id_number: "Số CMND người đại diện",
-        pres_issue_location: "Nơi cấp (Người đại diện)",
-        pres_issue_date: "Ngày cấp người đại diện (YYYYMMDD)",
-        pres_expire_date: "Ngày hết hạn người đại diện (YYYYMMDD)",
-        pres_tel_no: "Số điện thoại người đại diện",
-        pres_email_adrs: "Email người đại diện",
-        channel_id: "Kênh tiếp cận",
-        number_of_sig: "Số lượng chữ ký",
-        acco_divide: "Phân loại tài khoản (1: Thông thường, 2: Tự doanh, 3: Không lưu ký)",
-        acco_sts: "Trạng thái tài khoản (1: New, 2: Sleeping, 3: Active, 4: Closed)",
-        acco_act_date: "Ngày kích hoạt lại",
-        acco_sts_date: "Ngày chuyển trạng thái",
-        acco_str_date: "Ngày mở tài khoản",
-        contract_complete_date: "Ngày hoàn thiện hồ sơ",
-        contract_no: "Số hợp đồng",
-        order_money_conf: "Có kiểm tra tiền không (0:NO, 1:YES)",
-        order_stock_conf: "Có kiểm tra chứng khoán không (0:NO, 1:YES)",
-        not_collect_tax: "Có thu thuế (0: Có thu, 1: Không thu)",
-        contract_status: "Trạng thái hoàn thiện hồ sơ",
-        vsd_status: "Trạng thái gửi lên VSD",
-        reason_reject: "Lý do từ chối",
-        src_channel: "Kênh mở tài khoản",
-        remarks: "Ghi chú đặc điểm của khách hàng",
-        reg_date_time: "Thời gian đăng ký",
-        reg_user_id: "Người đăng ký",
-        upd_date_time: "Thời gian cập nhật",
-        upd_user_id: "Người cập nhật",
-        insertdate: "Ngày snapshot dữ liệu",
-        inserttime: "Thời điểm snapshot dữ liệu",
-        sid: "Mã SID định danh VSD",
-        pcod: "Mã NĐT VSD"
-    }
 }
 
 pre_operations {

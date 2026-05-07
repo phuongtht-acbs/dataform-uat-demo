@@ -8,6 +8,22 @@
 --|    and generally DO NOT need to be changed unless you have specific custom logic.
 --| ===================================================================================== 
 
+
+config {
+    // ===========================================================================
+    // STEP 0: Configure Dataform Metadata
+    // ===========================================================================
+    type: "incremental",
+    schema: "silver",
+    name: "stage_mrgtdebit_contract_hist", // Change to match your target table name
+    tags: ["silver", "stage", "daily", "debit_contract"], // Update domain tags (e.g., "debit_contract")
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: 'business_date',
+        updatePartitionFilter: `business_date = target_date`
+    }
+}
+
 js {
     // ===========================================================================
     // STEP 1: Define Source & Target Configuration
@@ -91,21 +107,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-    --| ===========================================================================
-    --| STEP 6: Configure Dataform Metadata
-    --| ===========================================================================
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_mrgtdebit_contract_hist", // Change to match your target table name
-    tags: ["silver", "stage", "daily", "debit_contract"], // Update domain tags (e.g., "debit_contract")
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: 'business_date',
-        updatePartitionFilter: `business_date = target_date`
-    }
 }
 
     --| ===========================================================================

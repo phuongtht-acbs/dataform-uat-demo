@@ -1,3 +1,16 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "stage_brktbroker",
+    uniqueKey: ["_hash_key"],
+    bigquery: {
+        partitionBy: "snapshot_date",
+        updatePartitionFilter: "snapshot_date = target_date"
+        },
+    description: "Bảng Staging chuẩn hóa thông tin môi giới",
+    tags: ["silver", "stage", "broker", "daily"],
+}
+
 js {
     // 1. THÔNG TIN NGUỒN TỪ BRONZE
     const source_table = "BRKTBROKER";
@@ -60,73 +73,6 @@ js {
         ...cleaned_cols,
         ...boolean_cols.map(b => b.field_name)
     ].map(col => col.toLowerCase());
-}
-
-config {
-    type: "incremental",
-    schema: "silver",
-    name: "stage_brktbroker",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "snapshot_date",
-        updatePartitionFilter: "snapshot_date = target_date"
-        },
-    description: "Bảng Staging chuẩn hóa thông tin môi giới",
-    tags: ["silver", "stage", "broker", "daily"],
-    columns: {
-        // Audit & Keys
-        _hash_key: "Khóa chính (Surrogate Key) của bản ghi Silver, sinh ra từ hash của broker_cd",
-        _ingested_at: "Thời điểm bản ghi lần đầu được đưa vào hệ thống",
-        _updated_at: "Thời điểm bản ghi được cập nhật mới nhất trong Silver",
-        snapshot_date: "Ngày snapshot dữ liệu, lấy từ trade_date để làm trường partition",
-
-        // Dates
-        trade_date: "Ngày dữ liệu ghi nhận từ hệ thống nguồn",
-        issue_date: "Ngày cấp giấy tờ định danh",
-        expire_date: "Ngày hết hạn giấy tờ định danh",
-        acco_begin_date: "Ngày bắt đầu làm việc",
-        acco_end_date: "Ngày kết thúc làm việc/Ngày hết hạn",
-        exc_begin_date: "Ngày xét kinh nghiệm KPI",
-        cert_begin_date: "Ngày cấp chứng chỉ hành nghề",
-
-        // Identifiers & Personal Information
-        broker_cd: "Mã nhân viên môi giới",
-        is_deleted: "Cờ đánh dấu dữ liệu đã bị xóa từ nguồn (9: Deleted)",
-        parent_broker_cd: "Mã môi giới quản lý cấp trên (Mặc định: null)",
-        family_name: "Họ nhân viên",
-        given_name: "Tên nhân viên",
-        mobile_no: "Số điện thoại di động",
-        email_adrs: "Địa chỉ Email",
-        adrs_1: "Địa chỉ thường trú 1",
-        adrs_2: "Địa chỉ thường trú 2",
-        id_number: "Số CMND/CCCD/Hộ chiếu",
-        issue_location: "Nơi cấp giấy tờ định danh",
-        
-        // Employment & Account Details
-        user_id: "Tài khoản người dùng trên hệ thống (UserID)",
-        transaction_cd: "Mã điểm giao dịch",
-        employee_type: "Phân loại nhân viên (1: Thử việc, 2: Chính thức, 3: CTV)",
-        ctv_corp_id: "ID mã quản lý tổ chức CTV (Áp dụng cho loại EMPLOYEE_TYPE = 3)",
-        acco_sts: "Trạng thái tài khoản môi giới",
-        approval_cd: "Loại giấy tờ định danh (1: ID Card, 2: Passport, 3: Driving Licence, 4: Business Certificate, 9: Other)",
-        business_type: "Loại hình kinh doanh (Lưu ID dạng chuỗi: 1, 2)",
-        broker_type_id: "Phân hệ môi giới",
-
-        // Compensation & Tax
-        depend_number: "Số người phụ thuộc giảm trừ gia cảnh",
-        insurance_salary: "Mức lương đóng bảo hiểm",
-        basic_salary: "Mức lương cơ bản",
-        end_basic_salary_month: "Tháng kết thúc nhận lương cơ bản (YYYYMM)",
-
-        // Technical Metadata
-        remarks: "Ghi chú bổ sung",
-        reg_date_time: "Thời gian đăng ký hệ thống",
-        reg_user_id: "Mã người dùng đăng ký",
-        upd_date_time: "Thời gian cập nhật hệ thống",
-        upd_user_id: "Mã người dùng cập nhật",
-        insert_date: "Ngày snapshot dữ liệu từ nguồn (InsertDate)",
-        insert_time: "Thời điểm snapshot dữ liệu (InsertTime)"
-    }
 }
 
 pre_operations {
