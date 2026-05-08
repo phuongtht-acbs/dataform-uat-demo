@@ -68,7 +68,7 @@ SELECT
     lkp_src.attribute_name AS src_channel_name,
 
     -- 3. Keys tới các đối tượng khác
-    b.broker_history_key,
+    b.dim_broker_key as broker_history_key,
     c.broker_cd,
     c.transaction_cd,
     c.introducer_cd,
@@ -121,7 +121,7 @@ LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src
 -- ==========================================
 -- TEMPORAL JOINS
 -- ==========================================
-LEFT JOIN ${ref("gold", "broker_history")} AS b
-  ON c.broker_cd = b.broker_cd
-  AND c.valid_from >= b.valid_from
-  AND (b.valid_to IS NULL OR c.valid_from < b.valid_to)
+LEFT JOIN ${ref("silver", "dim_broker")} AS b
+    ON c.broker_cd = b.broker_cd
+    AND c.valid_from >= b.valid_from
+    AND (c.valid_to IS NULL OR c.valid_from < b.valid_to)

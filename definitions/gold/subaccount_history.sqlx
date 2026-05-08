@@ -61,10 +61,10 @@ SELECT
     lkp_bnk.attribute_name AS bank_flg_name,
 
     -- 3. Keys dắt tới broker và customer
-    b.broker_history_key,
+    b.dim_broker_key as broker_history_key,
     s.broker_cd,
     b.transaction_cd,
-    c.customer_history_key,
+    c.dim_customer_key as customer_history_key,
     c.cust_no,
 
     -- 4. Thông tin kĩ thuật SCD2
@@ -107,12 +107,12 @@ LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_alg
 -- TEMPORAL JOINS
 -- ==========================================
 
-LEFT JOIN ${ref("gold", "customer_history")} AS c
+LEFT JOIN ${ref("silver", "dim_customer")} AS c
     ON s.cust_cd = c.cust_cd
     AND s.valid_from >= c.valid_from
     AND (c.valid_to IS NULL OR s.valid_from < c.valid_to)
 
-LEFT JOIN ${ref("gold", "broker_history")} AS b
+LEFT JOIN ${ref("silver", "dim_broker")} AS b
     ON s.broker_cd = b.broker_cd
     AND s.valid_from >= b.valid_from
     AND (b.valid_to IS NULL OR s.valid_from < b.valid_to)
