@@ -74,15 +74,16 @@ WITH staging_data AS (
         f.sub_acco_no,
         s.subaccount_history_key,
         f.cust_no,
-        s.customer_history_key,
+        c.customer_history_key,
         s.broker_cd,
-        s.broker_history_key
+        b.broker_history_key
         
     FROM ${ref(source_layer, source_table)} AS f
     
     -- Temporal join to historical dimension via subaccount_history
-    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", target_partition_col)}
-    
+    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "customer_history"), "c", "f.cust_no", "cust_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "f.business_date")}    
     WHERE 
         -- Switch between single date (incremental) and date range (full refresh)
         ${incremental() 

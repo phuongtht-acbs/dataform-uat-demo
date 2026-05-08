@@ -72,21 +72,23 @@ WITH staging_data AS (
         f.sub_acco_no,
         s.subaccount_history_key,
         f.cust_no,
-        s.customer_history_key,
+        c.customer_history_key,
         s.broker_cd,
-        s.broker_history_key
+        b.broker_history_key
         
     FROM ${ref(source_layer, source_table)} AS f
     
-    -- --- JOINS ---
+-- --- JOINS ---
     -- 1. Join để tìm giá trị cho các attribute được đánh số
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_trade 
         ON lkp_trade.category = 'CORTCASH_MOVEMENT__TRADE_TYPE' AND f.trade_type = lkp_trade.attribute_code
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
         ON lkp_sts.category = 'CORTCASH_MOVEMENT__STATUS' AND f.status = lkp_sts.attribute_code
         
-    -- 2. Dùng hàm joinHistory (ref_bảng, alias_bảng, left_key, right_key, join_date_col) để lấy ra foreign key của các đối tượng
-    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", target_partition_col)}
+    -- 2. Dùng hàm joinHistory để giải quyết Ragged Hierarchy: lookup key từng đối tượng tại đúng business_date
+    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "customer_history"), "c", "f.cust_no", "cust_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
     
     -- --- FILTER ---
     WHERE 
