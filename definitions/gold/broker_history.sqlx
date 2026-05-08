@@ -1,106 +1,75 @@
 config {
-    type: "incremental",
+    type: "table", // Changed from "incremental" to "view" (or "table" if dashboard performance requires it)
     schema: "gold",
     name: "broker_history",
-    description: "Full denormalized SCD Type 2 Broker history.",
+    description: "Lịch sử thông tin của môi giới. Lưu ý: thông tin tại thời điểm valid_from, bất kì thay đổi nào ở các đối tượng bên ngoài sau valid_from sẽ không được phản ánh vào đây",
     tags: ["gold", "broker", "history"],
-    uniqueKey: ["broker_history_key"],
     bigquery: {
-        partitionBy: "DATE(valid_from)",
+        partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']
     }
 }
 
-js {
-  // 1. SQL-specific configuration
-  const natural_key = "broker_cd";
-  const history_key = "broker_history_key";
-
-  // 2. Explicitly list the fields we want to keep from the silver dimension
-  const source_table = ref("silver", "dim_broker");
-  const source_cols = [
-    "broker_cd", "parent_broker_cd", "family_name", "given_name",
-    "mobile_no", "email_adrs", "adrs_1", "adrs_2", "id_number", "issue_location",
-    "issue_date", "expire_date", "user_id", "transaction_cd", "acco_begin_date",
-    "acco_end_date", "ctv_corp_id", "exc_begin_date", "cert_begin_date",
-    "business_type", "broker_type_id", "depend_number", "insurance_salary",
-    "basic_salary", "end_basic_salary_month", "remarks"
-  ];
-
-  // 3. Explicitly list the enriched fields added via JOINS
-  const enriched_cols = [
-    "employee_type_name", "acco_sts_name", "approval_type_name"
-  ];
-
-  // Combine both arrays for the comprehensive SCD2 record hash
-  const gold_cols = [...source_cols, ...enriched_cols];
-
-  // 4. Centralized Denormalization Logic
-  const denorm_query = `
-    SELECT
-        ${func.generateHash(gold_cols)} AS record_hash,
-        *
-    FROM (
-        SELECT
-            ${source_cols.map(col => `s.${col}`).join(",\n            ")},
-            
-            lkp_emp.attribute_name AS employee_type_name,
-            lkp_sts.attribute_name AS acco_sts_name,
-            lkp_app.attribute_name AS approval_type_name
-            
-        FROM ${source_table} AS s
-        
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_emp 
-            ON lkp_emp.category = 'BRKTBROKER__EMPLOYEE_TYPE'
-            AND s.employee_type = lkp_emp.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
-            ON lkp_sts.category = 'BRKTBROKER__ACCO_STS'
-            AND s.acco_sts = lkp_sts.attribute_code
-        LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app 
-            ON lkp_app.category = 'BRKTBROKER__APPROVAL_CD'
-            AND s.approval_cd = lkp_app.attribute_code
-            
-        WHERE target_date >= DATE(s.valid_from) AND (s.valid_to IS NULL OR target_date < DATE(s.valid_to))
-    )
-  `;
-
-  // Helper for getCurrentDim metadata
-  const cur_dim_cols = [
-    { name: natural_key, type: "STRING" },
-    { name: "record_hash", type: "BYTES" },
-    { name: "_ingested_at", type: "TIMESTAMP" }
-  ];
-}
-
-pre_operations {
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  DECLARE target_date DATE;
-  SET target_date = (
-    ${dataform.projectConfig.vars.target_date 
-      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(latest_target_date,) FROM ${source_table})`
-    }
-  );
-  
-  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
-}
-
-WITH
-  staging_hashed AS (${denorm_query}),
-  current_gold AS (${func.getCurrentDim(incremental(), self(), cur_dim_cols)})
-
 SELECT
-    ${when(incremental(), `COALESCE(cur._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
-    run_time AS _updated_at,
-    ${func.generateHash(["stg." + natural_key, "CAST(target_date AS STRING)"])} AS ${history_key},
-    CAST(target_date AS TIMESTAMP) AS valid_from,
-    CAST(NULL AS TIMESTAMP) AS valid_to,
-    true AS is_current,
-    stg.*
-FROM staging_hashed AS stg
-LEFT JOIN current_gold AS cur ON stg.${natural_key} = cur.${natural_key}
-WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
+    -- 0. Surrogate Key Mapping
+    -- We alias the key created in Silver to represent the Gold history key
+    b.dim_broker_key AS broker_history_key,
 
-post_operations {
-  ${func.expireHistory(self(), natural_key, denorm_query)}
-}
+    -- 1. Core Broker Attributes (From Silver)
+    b.broker_cd,
+    b.parent_broker_cd,
+    b.family_name,
+    b.given_name,
+    b.mobile_no,
+    b.email_adrs,
+    b.adrs_1,
+    b.adrs_2,
+    b.id_number,
+    b.issue_location,
+    b.issue_date,
+    b.expire_date,
+    b.user_id,
+    b.transaction_cd,
+    b.acco_begin_date,
+    b.acco_end_date,
+    b.ctv_corp_id,
+    b.exc_begin_date,
+    b.cert_begin_date,
+    b.business_type,
+    b.broker_type_id,
+    b.depend_number,
+    b.insurance_salary,
+    b.basic_salary,
+    b.end_basic_salary_month,
+    b.remarks,
+
+    -- 2. Enriched Lookups (Translating codes to readable names)
+    lkp_emp.attribute_name AS employee_type_name,
+    lkp_sts.attribute_name AS acco_sts_name,
+    lkp_app.attribute_name AS approval_type_name,
+
+    -- 3. Keys dắt tới thông tin chi nhánh (sẽ bổ sung)
+
+    -- 4. Thông tin kĩ thuật
+    b.valid_from,
+    b.valid_to,
+    b.is_current,
+    b._ingested_at,
+    b._updated_at
+
+FROM ${ref("silver", "dim_broker")} AS b
+
+-- ==========================================
+-- LOOKUP JOINS
+-- ==========================================
+LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_emp 
+    ON lkp_emp.category = 'BRKTBROKER__EMPLOYEE_TYPE'
+    AND b.employee_type = lkp_emp.attribute_code
+
+LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
+    ON lkp_sts.category = 'BRKTBROKER__ACCO_STS'
+    AND b.acco_sts = lkp_sts.attribute_code
+
+LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app 
+    ON lkp_app.category = 'BRKTBROKER__APPROVAL_CD'
+    AND b.approval_cd = lkp_app.attribute_code

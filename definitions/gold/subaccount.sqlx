@@ -2,74 +2,10 @@ config {
     type: "table",
     schema: "gold",
     name: "subaccount",
-    description: "Current snapshot of all Subaccount data, denormalized with Customer and Broker information.",
-    tags: ["gold", "subaccount", "current"],
-    bigquery: {
-        labels: {
-            "layer": "gold",
-            "domain": "subaccount"
-        }
-    }
+    description: "Thông tin hiện tại của tiểu khoản",
+    tags: ["gold", "subaccount", "current"]
 }
 
-SELECT
-    -- Identification
-    sub_acco_cd,
-    sub_acco_no,
-    
-    -- Status & Type
-    acco_type_name,
-    status_name,
-    source_channel_name,
-    algos_type,
-    type_flg,
-    
-    -- Dates
-    open_date,
-    close_date,
-    reopen_date,
-    
-    -- Linked Customer (Current)
-    cust_no,
-    customer_history_key,
-    cust_family_name,
-    cust_given_name,
-    
-    -- Linked Broker (Current)
-    broker_cd,
-    broker_history_key,
-    broker_family_name,
-    broker_given_name,
-    
-    -- Financials & Services
-    curr_cd,
-    is_auto_advance,
-    is_auto_mortgage,
-    retention_rate,
-    warning_rate,
-    tn_rate,
-    call_rate,
-    withdraw_rate,
-    margin_limit_grp,
-    margin_limit,
-    
-    -- Banking
-    bank_cd,
-    bank_branch_cd,
-    bank_acco_number,
-    bank_acco_name,
-    bank_flg_name,
-    
-    -- Other
-    contract_no,
-    source_cd,
-    source_sname,
-    remarks,
-    
-    -- Timestamps
-    _ingested_at,
-    _updated_at
-FROM
-    ${ref("gold", "subaccount_history")}
-WHERE
-    is_current = true
+SELECT *
+FROM ${ref("gold", "subaccount_history")}
+WHERE is_current = true
