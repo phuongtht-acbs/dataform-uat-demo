@@ -58,25 +58,28 @@ WITH staging_data AS (
         -- 1. Fact Keys & Identifiers
         f.${hash_key_name},
         f.business_date,
-        f.contract_no,
-        f.sub_acco_no,
+        
         
         -- 2. Inherited Surrogate Keys (SCD2 Linkage)
+        f.contract_no,
         dc.debit_contract_history_key,
-        sub.subaccount_history_key,
-        sub.customer_history_key,
-        sub.broker_history_key,
+        f.sub_acco_no,
+        s.subaccount_history_key,
+        s.cust_no,
+        c.customer_history_key,
+        s.broker_cd,
+        b.broker_history_key,
 
         -- 3. Factual Metrics
         ${fact_cols.map(col => `f.${col}`).join(",\n        ")}
 
     FROM ${ref(source_layer, source_table)} AS f
     
-    -- Temporal join to Debit Contract History
+    -- Join để lấy đúng key lịch sử
     ${func.joinHistory(ref("gold", "debit_contract_history"), "dc", "f.contract_no", "contract_no", "f.business_date")}
-    
-    -- Temporal join to Subaccount History (which also provides Customer and Broker keys)
-    ${func.joinHistory(ref("gold", "subaccount_history"), "sub", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "customer_history"), "c", "s.cust_no", "cust_no", "f.business_date")}
+    ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
     
     WHERE 
         ${incremental() 

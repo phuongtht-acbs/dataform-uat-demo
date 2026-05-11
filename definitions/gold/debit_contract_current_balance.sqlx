@@ -1,0 +1,90 @@
+config {
+    type: "incremental",
+    schema: "gold", // Moved to gold
+    name: "debit_contract_current_balance",
+    description: "Accumulating fact table storing the latest balance snapshot for each contract.",
+    tags: ["gold", "debit_contract", "fact", "current"],
+    
+    uniqueKey: ["contract_no"],
+    
+    bigquery: {
+        // Partitioning is removed because there is no static date (like allo_date) in the daily facts.
+        // Clustering is more than enough for BigQuery to execute lightning-fast MERGE operations.
+        clusterBy: ["contract_no", "sub_acco_no"]
+    }
+}
+
+js {
+  // ===========================================================================
+  // STEP 1: Define Source Configuration
+  // ===========================================================================
+  const source_layer = "silver";
+  const source_table = "fact_debit_contract_daily_balance";
+  const source_partition_col = "business_date"; 
+
+  // ===========================================================================
+  // STEP 2: Define Factual Columns to Track
+  // ===========================================================================
+  // NOTE: allo_date, ref_no, and status were removed because they are dimensional 
+  // attributes that belong in debit_contract_history, not the daily fact table!
+  const fact_cols = [
+    "sub_acco_no", "is_deleted", "amount", "payed_amount", "payed_interest",
+    "due_interest", "payed_manager", "due_manager", "last_payed_date"
+  ];
+}
+
+/* ===========================================================================
+   PRE-OPERATIONS: Standard Date Resolution
+   =========================================================================== */
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  DECLARE start_date DATE;
+  DECLARE end_date DATE;
+
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };`
+    : `SET start_date = ${dataform.projectConfig.vars.start_date 
+        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
+        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+       SET end_date = ${dataform.projectConfig.vars.end_date 
+        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
+        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+      };
+       SET target_date = NULL;`
+  }
+
+  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+}
+
+/* ===========================================================================
+   CORE SQL LOGIC
+   =========================================================================== */
+WITH staging_data AS (
+    SELECT
+        contract_no,
+        business_date AS last_fact_date,
+        ${fact_cols.join(",\n        ")}
+    FROM ${ref(source_layer, source_table)}
+    WHERE 
+        ${incremental() 
+          ? `${source_partition_col} = target_date` 
+          : `${source_partition_col} BETWEEN start_date AND end_date`
+        }
+    -- Deduplicate to ensure we only grab the absolute latest balance record
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY contract_no ORDER BY business_date DESC) = 1
+)
+
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.*
+    
+FROM staging_data AS stg
+
+-- Self-join on incremental runs to carry over historical ingestion metadata
+${when(incremental(), `LEFT JOIN ${self()} AS target ON stg.contract_no = target.contract_no`)}

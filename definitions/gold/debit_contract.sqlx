@@ -13,7 +13,7 @@ config {
 
 js {
     const dim_table_ref = ref("gold", "debit_contract_history")
-    const cur_fact_table_ref = ref("silver", "fact_debit_contract_current_balance")
+    const cur_fact_table_ref = ref("gold", "debit_contract_current_balance")
     const unique_key_col = "contract_no"
 }
 
