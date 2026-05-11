@@ -72,18 +72,18 @@ WITH staging_data AS (
 
         -- Entity Keys for Joins
         f.sub_acco_no,
-        s.subaccount_history_key,
+        s.dim_subaccount_key AS subaccount_history_key,
         f.cust_no,
-        c.customer_history_key,
+        c.dim_customer_key AS customer_history_key,
         s.broker_cd,
-        b.broker_history_key
+        b.dim_broker_key AS broker_history_key
         
     FROM ${ref(source_layer, source_table)} AS f
     
-    -- Temporal join to historical dimension via subaccount_history
-    ${func.joinHistory(ref("gold", "subaccount_history"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
-    ${func.joinHistory(ref("gold", "customer_history"), "c", "f.cust_no", "cust_no", "f.business_date")}
-    ${func.joinHistory(ref("gold", "broker_history"), "b", "s.broker_cd", "broker_cd", "f.business_date")}    
+    -- Dùng hàm joinHistory để lấy key từng đối tượng tại đúng ngày
+    ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
+    ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
+    ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}    
     WHERE 
         -- Switch between single date (incremental) and date range (full refresh)
         ${incremental() 
