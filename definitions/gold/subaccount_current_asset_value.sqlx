@@ -1,12 +1,12 @@
 config {
     type: "incremental",
     schema: "gold",
-    name: "debit_contract_current_balance",
-    description: "Accumulating fact table storing the latest balance snapshot for each contract.",
-    tags: ["gold", "debit_contract", "fact", "current"],
-    uniqueKey: ["contract_no"],
+    name: "subaccount_current_asset_value",
+    description: "Accumulating fact table storing the latest asset value for each subaccount.",
+    tags: ["gold", "asset_value", "fact", "current"],
+    uniqueKey: ["sub_acco_no"],
     bigquery: {
-        clusterBy: ["contract_no", "sub_acco_no"]
+        clusterBy: ["sub_acco_no"]
     }
 }
 
@@ -15,13 +15,13 @@ js {
   // STEP 1: Define Source Configuration
   // ===========================================================================
   const source_layer = "silver";
-  const source_table = "fact_debit_contract_daily_balance";
+  const source_table = "fact_subaccount_daily_asset_value";
   const source_partition_col = "business_date"; 
 
   // ===========================================================================
   // STEP 2: Define Factual Columns to Track
   // ===========================================================================
-  const natural_key_name = "contract_no"
+  const natural_key_name = "sub_acco_no"
   const fact_cols = [
     "sub_acco_no", "is_deleted", "amount", "payed_amount", "payed_interest",
     "due_interest", "payed_manager", "due_manager", "last_payed_date"
