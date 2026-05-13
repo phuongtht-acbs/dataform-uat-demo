@@ -1,143 +1,100 @@
+-- =====================================================================================
+-- SILVER STAGE VIEW
+-- =====================================================================================
+
 config {
-    type: "incremental",
+    // ===========================================================================
+    // BƯỚC 0: Config metadata của file
+    // ===========================================================================
+    type: "view", 
     schema: "silver",
     name: "stage_cortsub_account",
-    uniqueKey: ["_hash_key"],
-    bigquery: {
-        partitionBy: "snapshot_date",
-        updatePartitionFilter: "snapshot_date = target_date"
-    },
-    description: "Bảng Staging chuẩn hóa thông tin tiểu khoản (subAccount) từ hệ thống Core (CORTSUB_ACCOUNT). Thực hiện làm sạch dữ liệu chuỗi, xử lý ngày tháng và loại bỏ trùng lặp.",
-    tags: ["silver", "stage", "subaccount", "daily"],
+    tags: ["silver", "stage", "daily", "subaccount"]
 }
 
 js {
-    // 1. THÔNG TIN NGUỒN TỪ BRONZE
+    // ===========================================================================
+    // BƯỚC 1: Xác định nguồn dữ liệu
+    // ===========================================================================
+    const source_schema = "bronze";
     const source_table = "CORTSUB_ACCOUNT";
-    const source_partition_col = "InsertDate";
-    const unique_key_cols = ["SUB_ACCO_CD"];
+    const source_partition_col = 'InsertDate';
+    const target_partition_col = 'snapshot_date';
+
+    // ===========================================================================
+    // BƯỚC 2: Xác định mức độ chi tiết và logic để deduplicate
+    // ===========================================================================
+    const unique_key_cols = ["SUB_ACCO_CD", "InsertDate"];
     const dedupe_order_by = [
-        { field: "InsertTime", sort: "DESC" },
-        { field: "UPD_DATE_TIME", sort: "DESC" }
+        {field: "InsertTime", sort: "DESC"},
+        {field: "UPD_DATE_TIME", sort: "DESC"}
     ];
     
-    // 2. ĐẶT TÊN PARTITION CHO BẢNG NÀY
-    const target_partition_col = "snapshot_date";
-    
-    // 3. NHÓM TRƯỜNG DỮ LIỆU
-    const numeric_date_cols = [
-        "OPEN_DATE", "CLOSE_DATE", "REOPEN_DATE"
-    ];
-    
+
+    // ===========================================================================
+    // BƯỚC 3: Phân loại các trường để clean và chuẩn hóa
+    // ===========================================================================
     const date_cols = [];
-    
+    const numeric_date_cols = ["OPEN_DATE", "CLOSE_DATE", "REOPEN_DATE"];
     const boolean_cols = [
-        { source: "DEL_CD", field_name: "is_deleted", true_value: 9 }
+        {source: "DEL_CD", field_name: "is_deleted", true_value: 9},
     ];
-    
     const string_cols = [
         "CURR_CD", "SUB_ACCO_NO", "BANK_CD", "BANK_BRANCH_CD", 
         "BANK_ACCO_NUMBER", "BANK_ACCO_NAME", "BANK_ACCO_ID_NO", 
         "CONTRACT_NO", "BROKER_CD", "TRADE_ACCO_NO", "SOURCE_CD", 
         "SOURCE_SNAME", "REMARKS", "REG_USER_ID", "UPD_USER_ID"
     ];
-    
     const integer_cols = [
         "SUB_ACCO_CD", "CUST_CD", "ALGOS_TYPE", "ACCO_TYPE", "TYPE_FLG", 
         "NOT_UPDATE_BY_CUST", "BANK_FLG", "SOURCE_CHANNEL", "ACCO_STS", 
         "ACCO_FLG", "STATUS"
     ];
-    
     const numeric_cols = [];
-    const float_cols = [];
-
     const cleaned_cols = [
         "REG_DATE_TIME", "UPD_DATE_TIME", "InsertTime", "InsertDate"
     ];
 
-    //-----------------------------------------
-    // 4. XỬ LÝ BIẾN
-    
-    const has_partition_col = date_cols.some(col => col.toLowerCase() === target_partition_col.toLowerCase());
+    // ===========================================================================
+    // BƯỚC 4: Thêm trường mới tùy biến
+    // ===========================================================================
+    const custom_cols = [];
 
-    const output_cols = [
-        "_hash_key",
-        ...(has_partition_col ? [] : [target_partition_col]),
-        ...date_cols,
-        ...numeric_date_cols,
-        ...string_cols, 
-        ...integer_cols, 
-        ...numeric_cols, 
-        ...float_cols,
-        ...cleaned_cols,
-        ...boolean_cols.map(b => b.field_name)
-    ].map(col => col.toLowerCase());
+    // ===========================================================================
+    // BƯỚC 5: Kiểm tra xem target_partition_col đã có chưa
+    // ===========================================================================
+    const isPartitionInDateCols = date_cols.some(
+        col => col.toLowerCase() === target_partition_col.toLowerCase()
+    );
 }
 
-pre_operations {
-  -- 1. Khai báo biến
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
+-- ===========================================================================
+-- LOGIC SQL
+-- ===========================================================================
+SELECT
+${
+    [
+        // Thêm partition column nếu chưa có ở dưới
+        ...(!isPartitionInDateCols ? [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col}`] : []),
+        
+        // Thêm logic tùy biến
+        ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),
 
-  -- 2. Logic xác định thời gian dựa trên loại hình chạy
-  ${incremental() 
-    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
-        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref("bronze", source_table)})`
-      };`
-    : `SET start_date = ${dataform.projectConfig.vars.start_date 
-        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-        : `(SELECT MIN(${source_partition_col}) FROM ${ref("bronze", source_table)})`
-      };
-      SET end_date = ${dataform.projectConfig.vars.end_date 
-        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref("bronze", source_table)})`
-      };
-      SET target_date = NULL; -- Đảm bảo updatePartitionFilter không bị lỗi khi biên dịch`
-  }
-
-  -- 3. Drop table khi Full Refresh
-  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
-}
-
-WITH staging_data AS (
-    SELECT
-    ${[
-        // Xác định key để join và partition field (nếu chưa có)
-        `${func.generateHash(unique_key_cols.map(c => `CAST(${c} AS STRING)`))} AS _hash_key`,
-        ...(has_partition_col ? [] : [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col.toLowerCase()}`]),
-
-        // Clean dữ liệu
+        // Clean và chuẩn hóa kiểu dữ liệu
         ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
         ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
         ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
         ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
         ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
-        ...float_cols.map(col => `CAST(${col} AS FLOAT64) AS ${col.toLowerCase()}`),
         ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
         ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
-    ].join(",\n        ")}
+    ].join(",\n        ")
+}
+FROM ${ref(source_schema, source_table)}
 
-    FROM ${ref("bronze", source_table)}
-    WHERE
-        ${incremental() 
-          ? `${source_partition_col} = target_date` 
-          : `${source_partition_col} BETWEEN start_date AND end_date`
-        }
-    -- Deduplicate dựa trên key duy nhất
-    QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY ${unique_key_cols.join(", ")} 
-        ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
-    ) = 1
-)
-
-SELECT
-    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
-    run_time AS _updated_at,
-    ${output_cols.map(col => `stg.${col}`).join(",\n    ")}
-FROM staging_data AS stg
-${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg._hash_key = target._hash_key AND target.${target_partition_col} = target_date`
-)}
+-- Deduplicate để đảm bảo tính duy nhất của View
+QUALIFY
+ROW_NUMBER() OVER (
+    PARTITION BY ${unique_key_cols.join(", ")} 
+    ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+) = 1
