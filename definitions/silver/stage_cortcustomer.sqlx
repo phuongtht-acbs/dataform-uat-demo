@@ -71,7 +71,7 @@ js {
     // ===========================================================================
     // BƯỚC 5: Kiểm tra xem target_partition_col đã có chưa
     // ===========================================================================
-    const isPartitionInDateCols = date_cols.some(
+    const isPartitionInCleanedCols = cleaned_cols.some(
         col => col.toLowerCase() === target_partition_col.toLowerCase()
     );
 }
@@ -83,7 +83,7 @@ SELECT
 ${
     [
         // Thêm partition column nếu chưa có ở dưới
-        ...(!isPartitionInDateCols ? [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col}`] : []),
+        ...(!isPartitionInCleanedCols ? [`${source_partition_col} AS ${target_partition_col}`] : []),
         
         // Thêm logic tùy biến
         ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),

@@ -34,7 +34,7 @@ js {
     // BƯỚC 3: Phân loại các trường để clean và chuẩn hóa
     // ===========================================================================
     const date_cols = [
-        "ALLO_DATE", "ENTRY_DATE", "SRC_DATE"
+        "ENTRY_DATE", "SRC_DATE"
     ];
     const numeric_date_cols = [];
     const boolean_cols = [
@@ -53,7 +53,7 @@ js {
         "BEGIN_AMOUNT", "AMOUNT", "AFTER_AMOUNT"
     ];
     const cleaned_cols = [
-        "APPROVED_DATE_TIME", "REG_DATE_TIME", "UPD_DATE_TIME"
+        "APPROVED_DATE_TIME", "REG_DATE_TIME", "UPD_DATE_TIME", "ALLO_DATE",
     ];
 
     // ===========================================================================
@@ -69,7 +69,7 @@ js {
     // ===========================================================================
     // BƯỚC 5: Kiểm tra xem target_partition_col đã có chưa
     // ===========================================================================
-    const isPartitionInDateCols = date_cols.some(
+    const isPartitionInCleanedCols = cleaned_cols.some(
         col => col.toLowerCase() === target_partition_col.toLowerCase()
     );
 }
@@ -81,7 +81,7 @@ SELECT
 ${
     [
         // Thêm partition column nếu chưa có ở dưới
-        ...(!isPartitionInDateCols ? [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col}`] : []),
+        ...(!isPartitionInCleanedCols ? [`${source_partition_col} AS ${target_partition_col}`] : []),
         
         // Thêm logic tùy biến
         ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),

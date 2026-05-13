@@ -34,7 +34,7 @@ js {
     // ===========================================================================
     // BƯỚC 3: Phân loại các trường để clean và chuẩn hóa
     // ===========================================================================
-    const date_cols = ["BUSINESS_DATE", "InsertDate"];
+    const date_cols = [];
     const numeric_date_cols = [];
     const boolean_cols = [
         {source: "DEL_CD", field_name: "is_deleted", true_value: 9},
@@ -59,7 +59,8 @@ js {
         "DIVIDEND_CASH_MARKET_AMT", "DIVIDEND_SEC_MARKET_AMT", "NAV_BI"
     ];
     const cleaned_cols = [
-        "REG_DATE_TIME", "UPD_DATE_TIME", "InsertTime", "REG_USER_ID", "UPD_USER_ID"
+        "BUSINESS_DATE", "InsertDate", "InsertTime",
+        "REG_DATE_TIME", "UPD_DATE_TIME", "REG_USER_ID", "UPD_USER_ID"
     ];
 
     // ===========================================================================
@@ -70,7 +71,7 @@ js {
     // ===========================================================================
     // BƯỚC 5: Kiểm tra xem target_partition_col đã có chưa
     // ===========================================================================
-    const isPartitionInDateCols = date_cols.some(
+    const isPartitionInCleanedCols = cleaned_cols.some(
         col => col.toLowerCase() === target_partition_col.toLowerCase()
     );
 }
@@ -82,7 +83,7 @@ SELECT
 ${
     [
         // Thêm partition column nếu chưa có ở dưới
-        ...(!isPartitionInDateCols ? [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col}`] : []),
+        ...(!isPartitionInCleanedCols ? [`${source_partition_col} AS ${target_partition_col}`] : []),
         
         // Thêm logic tùy biến
         ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),

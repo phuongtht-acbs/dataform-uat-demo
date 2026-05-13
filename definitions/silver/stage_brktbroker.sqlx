@@ -34,9 +34,7 @@ js {
     // ===========================================================================
     // BƯỚC 3: Phân loại các trường để clean và chuẩn hóa
     // ===========================================================================
-    const date_cols = [
-        "TRADE_DATE"
-    ];
+    const date_cols = [];
     const numeric_date_cols = [
         "ISSUE_DATE", "EXPIRE_DATE", "ACCO_BEGIN_DATE", "ACCO_END_DATE",
         "EXC_BEGIN_DATE", "CERT_BEGIN_DATE"
@@ -58,7 +56,7 @@ js {
         "INSURANCE_SALARY", "BASIC_SALARY"
     ];
     const cleaned_cols = [
-        "REG_DATE_TIME", "UPD_DATE_TIME", "InsertDate", "InsertTime"
+        "REG_DATE_TIME", "UPD_DATE_TIME", "InsertDate", "InsertTime", "TRADE_DATE"
     ];
 
     // ===========================================================================
@@ -69,7 +67,7 @@ js {
     // ===========================================================================
     // BƯỚC 5: Kiểm tra xem target_partition_col đã có chưa
     // ===========================================================================
-    const isPartitionInDateCols = date_cols.some(
+    const isPartitionInCleanedCols = cleaned_cols.some(
         col => col.toLowerCase() === target_partition_col.toLowerCase()
     );
 }
@@ -81,7 +79,7 @@ SELECT
 ${
     [
         // Thêm partition column nếu chưa có ở dưới
-        ...(!isPartitionInDateCols ? [`${func.cleanNullDate(source_partition_col)} AS ${target_partition_col}`] : []),
+        ...(!isPartitionInCleanedCols ? [`${source_partition_col} AS ${target_partition_col}`] : []),
         
         // Thêm logic tùy biến
         ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),
