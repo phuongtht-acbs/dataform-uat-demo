@@ -11,6 +11,7 @@ config {
 }
 
 js {
+  // 1. Define business columns (Output names)
   const sub_account_cols = [
     "sub_acco_cd", "sub_acco_no", "is_deleted", "cust_cd", "acco_type", "algos_type",
     "type_flg", "curr_cd", "bank_cd", "bank_branch_cd", "bank_acco_number",
@@ -26,7 +27,34 @@ js {
     "tn_rate", "call_rate", "withdraw_rate", "margin_limit_grp", "margin_limit"
   ];
 
-  const asset_cols = ['cust_group_id']
+  const asset_cols = ['cust_group_id'];
+
+  // 2. Technical columns required from Bronze for logic (Deduplication, Range Join)
+  const sub_account_bronze_tech = ["SUB_ACCO_CD", "InsertDate", "InsertTime", "UPD_DATE_TIME", "DEL_CD"];
+  const asset_ext_bronze_tech = ["SUB_ACCO_CD", "BUSINESS_DATE", "InsertTime", "UPD_DATE_TIME", "IS_AUTO_ADVANCE", "IS_AUTO_MORTGAGE"];
+  const asset_bronze_tech = ["SUB_ACCO_CD", "BUSINESS_DATE", "InsertTime", "UPD_DATE_TIME"];
+
+  // Helper to get unique Bronze column list for CORTSUB_ACCOUNT
+  const getSubAccountBronzeCols = () => {
+    const business = sub_account_cols
+      .filter(c => c !== "is_deleted") // Handled via DEL_CD
+      .map(c => c.toUpperCase());
+    return [...new Set([...business, ...sub_account_bronze_tech])].join(", ");
+  };
+
+  // Helper to get unique Bronze column list for CORTASSET_EXT
+  const getAssetExtBronzeCols = () => {
+    const business = asset_ext_cols
+      .filter(c => !["is_auto_advance", "is_auto_mortgage"].includes(c))
+      .map(c => c.toUpperCase());
+    return [...new Set([...business, ...asset_ext_bronze_tech])].join(", ");
+  };
+
+  // Helper to get unique Bronze column list for CORTASSET
+  const getAssetBronzeCols = () => {
+    const business = asset_cols.map(c => c.toUpperCase());
+    return [...new Set([...business, ...asset_bronze_tech])].join(", ");
+  };
 }
 
 pre_operations {
@@ -34,14 +62,16 @@ pre_operations {
   DECLARE target_date DATE;
   DECLARE start_date DATE;
   DECLARE end_date DATE;
+  
   DECLARE asset_ext_min_date DATE;
   DECLARE asset_min_date DATE;
 
+  -- 1. Date resolution
   ${incremental() 
     ? `
       SET target_date = ${dataform.projectConfig.vars.target_date 
           ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-          : `(SELECT MAX(snapshot_date) FROM ${ref("silver", "stage_cortsub_account")})`
+          : `(SELECT MAX(InsertDate) FROM ${ref("bronze", "CORTSUB_ACCOUNT")})`
       };
       SET start_date = target_date;
       SET end_date = target_date;
@@ -49,73 +79,106 @@ pre_operations {
     : `
       SET start_date = ${dataform.projectConfig.vars.start_date 
           ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-          : `(SELECT MIN(snapshot_date) FROM ${ref("silver", "stage_cortsub_account")})`
+          : `(SELECT MIN(InsertDate) FROM ${ref("bronze", "CORTSUB_ACCOUNT")})`
       };
       SET end_date = ${dataform.projectConfig.vars.end_date 
           ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-          : `(SELECT MAX(snapshot_date) FROM ${ref("silver", "stage_cortsub_account")})`
+          : `(SELECT MAX(InsertDate) FROM ${ref("bronze", "CORTSUB_ACCOUNT")})`
       };
       SET target_date = NULL;
     `
   }
 
+  -- 2. Watermark calculation
   SET asset_ext_min_date = (
-    SELECT COALESCE(MAX(business_date), start_date) 
-    FROM ${ref("silver", "stage_cortasset_ext")} 
-    WHERE business_date <= start_date
+    SELECT COALESCE(MAX(BUSINESS_DATE), start_date) 
+    FROM ${ref("bronze", "CORTASSET_EXT")} 
+    WHERE BUSINESS_DATE <= start_date
   );
 
   SET asset_min_date = (
-    SELECT COALESCE(MAX(business_date), start_date) 
-    FROM ${ref("silver", "stage_cortasset")} 
-    WHERE business_date <= start_date
+    SELECT COALESCE(MAX(BUSINESS_DATE), start_date) 
+    FROM ${ref("bronze", "CORTASSET")} 
+    WHERE BUSINESS_DATE <= start_date
   );
 }
 
 WITH base_sub_account AS (
-    SELECT * FROM ${ref("silver", "stage_cortsub_account")}
-    WHERE snapshot_date BETWEEN start_date AND end_date
+    SELECT 
+        InsertDate AS snapshot_date,
+        ${getSubAccountBronzeCols()}
+    FROM ${ref("bronze", "CORTSUB_ACCOUNT")}
+    WHERE InsertDate BETWEEN start_date AND end_date
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY SUB_ACCO_CD, InsertDate 
+        ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+    ) = 1
 ),
 
-asset_ext_source AS (
+asset_ext_cleaned AS (
     SELECT 
         *,
-        LEAD(business_date) OVER (PARTITION BY sub_acco_cd ORDER BY business_date) AS next_business_date
-    FROM ${ref("silver", "stage_cortasset_ext")}
-    WHERE business_date >= asset_ext_min_date 
-      AND business_date <= end_date
+        LEAD(BUSINESS_DATE) OVER (PARTITION BY SUB_ACCO_CD ORDER BY BUSINESS_DATE) AS next_business_date
+    FROM (
+        SELECT ${getAssetExtBronzeCols()} FROM ${ref("bronze", "CORTASSET_EXT")}
+        WHERE BUSINESS_DATE >= asset_ext_min_date AND BUSINESS_DATE <= COALESCE(target_date, end_date)
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY SUB_ACCO_CD, BUSINESS_DATE 
+            ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+        ) = 1
+    )
 ),
 
-asset_source AS (
+asset_cleaned AS (
     SELECT 
         *,
-        LEAD(business_date) OVER (PARTITION BY sub_acco_cd ORDER BY business_date) AS next_business_date
-    FROM ${ref("silver", "stage_cortasset")}
-    WHERE business_date >= asset_min_date 
-      AND business_date <= end_date
+        LEAD(BUSINESS_DATE) OVER (PARTITION BY SUB_ACCO_CD ORDER BY BUSINESS_DATE) AS next_business_date
+    FROM (
+        SELECT ${getAssetBronzeCols()} FROM ${ref("bronze", "CORTASSET")}
+        WHERE BUSINESS_DATE >= asset_min_date AND BUSINESS_DATE <= COALESCE(target_date, end_date)
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY SUB_ACCO_CD, BUSINESS_DATE 
+            ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+        ) = 1
+    )
 )
 
 SELECT
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generateHash(['s.snapshot_date', 's.sub_acco_cd'])} AS _hash_key,
+    ${func.generateHash(['s.snapshot_date', 's.SUB_ACCO_CD'])} AS _hash_key,
     s.snapshot_date,
-    ${sub_account_cols.map(c => `s.${c}`).join(",\n    ")},
-    ${asset_ext_cols.map(c => `ae.${c}`).join(",\n    ")},
-    ${asset_cols.map(c => `a.${c}`).join(",\n    ")}
+    -- Column Mapping & Cleaning
+    ${sub_account_cols.map(c => {
+        if (c === "is_deleted") return `CAST(s.DEL_CD AS INT64) = 9 AS is_deleted`;
+        return `s.${c.toUpperCase()} AS ${c.toLowerCase()}`;
+    }).join(",\n    ")},
+    -- Asset Ext Mapping
+    ${asset_ext_cols.map(c => {
+        if (c === "is_auto_advance") return `CAST(ae.IS_AUTO_ADVANCE AS INT64) = 1 AS is_auto_advance`;
+        if (c === "is_auto_mortgage") return `CAST(ae.IS_AUTO_MORTGAGE AS INT64) = 1 AS is_auto_mortgage`;
+        return `ae.${c.toUpperCase()} AS ${c.toLowerCase()}`;
+    }).join(",\n    ")},
+    -- Asset Mapping
+    ${asset_cols.map(c => `a.${c.toUpperCase()} AS ${c.toLowerCase()}`).join(",\n    ")}
+
 FROM base_sub_account AS s
-LEFT JOIN asset_ext_source AS ae ON s.sub_acco_cd = ae.sub_acco_cd 
-    AND s.snapshot_date >= ae.business_date
+
+LEFT JOIN asset_ext_cleaned AS ae 
+    ON s.SUB_ACCO_CD = ae.SUB_ACCO_CD 
+    AND s.snapshot_date >= ae.BUSINESS_DATE
     AND (s.snapshot_date < ae.next_business_date OR ae.next_business_date IS NULL)
-LEFT JOIN asset_source AS a ON s.sub_acco_cd = a.sub_acco_cd 
-    AND s.snapshot_date >= a.business_date
+
+LEFT JOIN asset_cleaned AS a 
+    ON s.SUB_ACCO_CD = a.SUB_ACCO_CD 
+    AND s.snapshot_date >= a.BUSINESS_DATE
     AND (s.snapshot_date < a.next_business_date OR a.next_business_date IS NULL)
 
 ${when(incremental(),
-  `LEFT JOIN ${self()} AS target ON s._hash_key = target._hash_key AND target.snapshot_date = target_date`
+  `LEFT JOIN ${self()} AS target ON s.SUB_ACCO_CD = target.sub_acco_cd AND target.snapshot_date = target_date`
 )}
 
 QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY s.snapshot_date, s.sub_acco_cd 
-  ORDER BY ae.business_date DESC, a.business_date DESC, ae.InsertTime DESC, a.InsertTime DESC
+  PARTITION BY s.snapshot_date, s.SUB_ACCO_CD 
+  ORDER BY ae.BUSINESS_DATE DESC, a.BUSINESS_DATE DESC, ae.InsertTime DESC, a.InsertTime DESC
 ) = 1
