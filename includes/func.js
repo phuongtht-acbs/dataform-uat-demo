@@ -103,6 +103,22 @@ function expireHistory(targetTable, naturalKey, stagingQuery) {
         t.is_current = false;
   `;
 }
+
+/**
+ * Updates the bronze_checkpoint table with the latest date from a source.
+ * @param {string} entryName - The table name key (e.g., 'CORTSUB_ACCOUNT').
+ * @param {string} sourceRef - The ref() of the bronze source table.
+ * @param {string} dateCol - The partition column name in bronze.
+ */
+function updateCheckpoint(entryName, sourceRef, dateCol, checkpointRef) {
+  return `
+    UPDATE ${checkpointRef}
+    SET latest_date = (SELECT MAX(${dateCol}) FROM ${sourceRef}),
+        _updated_at = CURRENT_TIMESTAMP()
+    WHERE table_name = '${entryName}';
+  `;
+}
+
 module.exports = { 
     cleanNullString, 
     cleanNullDate,
@@ -110,5 +126,6 @@ module.exports = {
     generateHash,
     getCurrentDim,
     joinHistory,
-    expireHistory
+    expireHistory,
+    updateCheckpoint
 };
