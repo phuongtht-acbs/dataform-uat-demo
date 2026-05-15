@@ -6,7 +6,7 @@ config {
     tags: ["gold", "debit_contract", "current"],
     uniqueKey: ["contract_id"],
     bigquery: {
-        partitionBy: "DATE(allo_date)",
+        partitionBy: "allo_date",
         clusterBy: ["sub_acco_no", "contract_id", "status"],
     }
 }
