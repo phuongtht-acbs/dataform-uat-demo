@@ -82,8 +82,8 @@ WITH staging_data AS (
     
     -- Join với các Dimension layer Silver để lấy Key SCD2 tại thời điểm business_date
     ${func.joinHistory(ref("silver", "dim_debit_contract"), "dc", "f.contract_id", "contract_id", "f.business_date")}
-    ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
-    ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
+    ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "dc.sub_acco_no", "sub_acco_no", "f.business_date")}
+    ${func.joinHistory(ref("silver", "dim_customer"), "c", "s.cust_no", "cust_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
     
     ${when(incremental(), `WHERE f.${partition_col} = target_date`)}

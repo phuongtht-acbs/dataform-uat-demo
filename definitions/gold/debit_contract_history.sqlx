@@ -16,7 +16,6 @@ SELECT
     dc.ref_no,
     dc.parent_date,
     dc.parent_no,
-    dc.sub_acco_cd,
     dc.sub_acco_no,
     dc.cust_group_id,
     dc.contr_date_from,
@@ -73,22 +72,21 @@ FROM ${ref("silver", "dim_debit_contract")} AS dc
 -- ==========================================
 -- LOOKUP JOINS
 -- ==========================================
--- Note: Cast to string is applied safely if staging loaded these as integers.
 LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_deb
     ON lkp_deb.category = 'MRGTDEBIT_CONTRACT__DEBIT_TYPE'
-    AND CAST(dc.debit_type AS STRING) = lkp_deb.attribute_code
+    AND dc.debit_type = lkp_deb.attribute_code
   
 LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con
     ON lkp_con.category = 'MRGTDEBIT_CONTRACT__CONTRACT_TYPE'
-    AND CAST(dc.contract_type AS STRING) = lkp_con.attribute_code
+    AND dc.contract_type = lkp_con.attribute_code
   
 LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_loa
     ON lkp_loa.category = 'MRGTDEBIT_CONTRACT__LOAN_TYPE'
-    AND CAST(dc.loan_type AS STRING) = lkp_loa.attribute_code
+    AND dc.loan_type = lkp_loa.attribute_code
   
 LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
     ON lkp_sts.category = 'MRGTDEBIT_CONTRACT__STATUS'
-    AND CAST(dc.status AS STRING) = lkp_sts.attribute_code
+    AND dc.status = lkp_sts.attribute_code
 
 -- ==========================================
 -- TEMPORAL JOINS
