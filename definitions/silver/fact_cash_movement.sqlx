@@ -2,34 +2,24 @@ config {
   // ===========================================================================
   // BƯỚC 1: Config metadata của file
   // ===========================================================================
-  type: "incremental",
+  type: "view",
   schema: "silver",
   name: "fact_cash_movement",
-  description: "Bảng Fact lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
-  uniqueKey: ["cash_movement_key"],
-  tags: ["silver", "fact", "daily", "cash_movement"],
-  bigquery: {
-      partitionBy: "business_date",
-      updatePartitionFilter: "business_date = target_date"
-  }
+  description: "View lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
+  tags: ["silver", "fact", "view"]
 }
 
 js {
   // ============================================================================
   // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
   // ============================================================================
-  const bronze_source_table = "CORTCASH_MOVEMENT_HISTORY"; // Tên bảng ở lớp bronze để lấy ngày mới nhất
   const source_schema = "silver";                          // Dataset chứa bảng stage nguồn
   const source_table = "stage_cortcash_movement_history";  // Tên bảng stage nguồn
-  const partition_col = "business_date";                   // Cột phân vùng (business_date)
-
-  const surrogate_key = "cash_movement_key";               // Tên key bảng
-  const hash_elements = ["'VGaia'", "cash_movement_id"];   // Các thành phần cấu tạo nên hash key
 
   // ============================================================================
-  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng fact
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng view
   // ============================================================================
-  const fact_cols = [
+  const cols = [
     "business_date", "cash_movement_id", "allo_date", "ref_no", "is_deleted", "cust_cd", "cust_no", "sub_acco_cd", "sub_acco_no",
     "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
     "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
@@ -41,42 +31,12 @@ js {
   // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
   // ============================================================================
   const source_ref = ref(source_schema, source_table);
-  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
 -- ===========================================================================
 -- LOGIC SQL (không cần đụng vào)
 -- ===========================================================================
-pre_operations {
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  DECLARE target_date DATE;
-
-  ${incremental() 
-    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
-        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
-      };`
-    : `SET target_date = NULL;`
-  }
-
-  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
-}
-
-WITH base_fact AS (
-    SELECT
-        ${func.generateHash(hash_elements.map(el => 
-            el.includes("'") ? el : `CAST(${el} AS STRING)`
-        ))} AS ${surrogate_key},
-        ${fact_cols.join(",\n        ")}
-    FROM ${source_ref}
-    ${when(incremental(), `WHERE ${partition_col} = target_date`)}
-)
 
 SELECT
-    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
-    run_time AS _updated_at,
-    stg.*
-FROM base_fact AS stg
-${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} and target.${partition_col} = target_date`
-)}
+    ${cols.join(",\n    ")}
+FROM ${source_ref}
