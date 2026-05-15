@@ -28,11 +28,13 @@ js {
   ];
 
   const asset_cols = ['cust_group_id'];
+  const customer_cols = ['cust_no'];
 
   // 2. Technical columns required from Bronze for logic (Deduplication, Range Join)
   const sub_account_bronze_tech = ["SUB_ACCO_CD", "InsertDate", "InsertTime", "UPD_DATE_TIME", "DEL_CD"];
   const asset_ext_bronze_tech = ["SUB_ACCO_CD", "BUSINESS_DATE", "InsertTime", "UPD_DATE_TIME", "IS_AUTO_ADVANCE", "IS_AUTO_MORTGAGE"];
   const asset_bronze_tech = ["SUB_ACCO_CD", "BUSINESS_DATE", "InsertTime", "UPD_DATE_TIME"];
+  const customer_bronze_tech = ["CUST_CD", "CUST_NO", "InsertTime", "UPD_DATE_TIME"];
 
   // Helper to get unique Bronze column list for CORTSUB_ACCOUNT
   const getSubAccountBronzeCols = () => {
@@ -54,6 +56,11 @@ js {
   const getAssetBronzeCols = () => {
     const business = asset_cols.map(c => c.toUpperCase());
     return [...new Set([...business, ...asset_bronze_tech])].join(", ");
+  };
+  
+  // Helper for CORTCUSTOMER
+  const getCustomerBronzeCols = () => {
+    return [...new Set(customer_bronze_tech)].join(", ");
   };
 }
 
@@ -115,6 +122,17 @@ WITH base_sub_account AS (
     ) = 1
 ),
 
+customer_cleaned AS (
+    SELECT 
+        CUST_CD, CUST_NO
+    FROM ${ref("bronze", "CORTCUSTOMER")}
+    WHERE InsertDate BETWEEN start_date AND end_date
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY CUST_CD 
+        ORDER BY InsertTime DESC, UPD_DATE_TIME DESC
+    ) = 1
+),
+
 asset_ext_cleaned AS (
     SELECT 
         *,
@@ -159,18 +177,20 @@ SELECT
         if (c === "is_auto_mortgage") return `CAST(ae.IS_AUTO_MORTGAGE AS INT64) = 1 AS is_auto_mortgage`;
         return `ae.${c.toUpperCase()} AS ${c.toLowerCase()}`;
     }).join(",\n    ")},
+    -- Customer mapping
+    c.CUST_NO AS cust_no,
     -- Asset Mapping
     ${asset_cols.map(c => `a.${c.toUpperCase()} AS ${c.toLowerCase()}`).join(",\n    ")}
 
 FROM base_sub_account AS s
 
-LEFT JOIN asset_ext_cleaned AS ae 
-    ON s.SUB_ACCO_CD = ae.SUB_ACCO_CD 
+LEFT JOIN customer_cleaned AS c ON s.CUST_CD = c.CUST_CD
+
+LEFT JOIN asset_ext_cleaned AS ae ON s.SUB_ACCO_CD = ae.SUB_ACCO_CD 
     AND s.snapshot_date >= ae.BUSINESS_DATE
     AND (s.snapshot_date < ae.next_business_date OR ae.next_business_date IS NULL)
 
-LEFT JOIN asset_cleaned AS a 
-    ON s.SUB_ACCO_CD = a.SUB_ACCO_CD 
+LEFT JOIN asset_cleaned AS a ON s.SUB_ACCO_CD = a.SUB_ACCO_CD 
     AND s.snapshot_date >= a.BUSINESS_DATE
     AND (s.snapshot_date < a.next_business_date OR a.next_business_date IS NULL)
 
