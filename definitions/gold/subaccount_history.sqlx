@@ -108,7 +108,7 @@ LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_alg
 -- ==========================================
 
 LEFT JOIN ${ref("silver", "dim_customer")} AS c
-    ON s.cust_cd = c.cust_cd
+    ON s.cust_no = c.cust_no
     AND s.valid_from >= c.valid_from
     AND (c.valid_to IS NULL OR s.valid_from < c.valid_to)
 

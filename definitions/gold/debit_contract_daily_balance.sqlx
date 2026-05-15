@@ -70,7 +70,7 @@ WITH staging_data AS (
         dc.dim_debit_contract_key AS debit_contract_history_key,
         f.sub_acco_no,
         s.dim_subaccount_key AS subaccount_history_key,
-        f.cust_no,
+        s.cust_no,
         c.dim_customer_key AS customer_history_key,
         s.broker_cd,
         b.dim_broker_key AS broker_history_key,

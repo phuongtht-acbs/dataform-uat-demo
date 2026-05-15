@@ -63,6 +63,8 @@ SELECT
     -- ==========================================
     dim.contract_id,
     dim.sub_acco_no,
+    dim.cust_no,
+    dim.broker_cd,
     dim.cust_group_id,
 
     -- ==========================================

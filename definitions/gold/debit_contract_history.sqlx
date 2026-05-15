@@ -16,7 +16,6 @@ SELECT
     dc.ref_no,
     dc.parent_date,
     dc.parent_no,
-    dc.sub_acco_no,
     dc.cust_group_id,
     dc.contr_date_from,
     dc.contr_date_to,
@@ -54,7 +53,7 @@ SELECT
 
     -- 3. Keys tới các đối tượng
     s.dim_subaccount_key as subaccount_history_key,
-    s.sub_acco_no,
+    dc.sub_acco_no,
     c.dim_customer_key as customer_history_key,
     c.cust_no,
     b.dim_broker_key as broker_history_key,
