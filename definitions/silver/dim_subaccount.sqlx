@@ -75,7 +75,7 @@ WITH all_history AS (
     SELECT
         ${func.generateHash(dim_cols)} AS record_hash,
         ${partition_col},
-        * EXCEPT(${partition_col}, _ingested_at, _updated_at, _hash_key)
+        ${dim_cols.join(",\n        ")}
     FROM ${source_ref}
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY ${natural_key}, ${partition_col} ORDER BY ${tech_key} DESC

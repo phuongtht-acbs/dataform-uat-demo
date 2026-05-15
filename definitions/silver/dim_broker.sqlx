@@ -18,7 +18,7 @@ js {
   // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
   // ============================================================================
   const bronze_source_table = "BRKTBROKER";         // Tên bảng ở lớp bronze để lấy ngày mới nhất
-  const source_schema = "silver";                    // Dataset chứa bảng stage nguồn
+  const source_schema = "silver";                   // Dataset chứa bảng stage nguồn
   const source_table = "stage_brktbroker";          // Tên bảng stage nguồn
   const partition_col = "snapshot_date";            // Tên cột để filter ngày mới nhất
 
@@ -74,7 +74,7 @@ WITH all_history AS (
     SELECT
         ${func.generateHash(dim_cols)} AS record_hash,
         ${partition_col},
-        * EXCEPT(${partition_col}, _ingested_at, _updated_at, _hash_key)
+        ${dim_cols.join(",\n        ")}
     FROM ${source_ref}
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY ${natural_key}, ${partition_col} ORDER BY ${tech_key} DESC

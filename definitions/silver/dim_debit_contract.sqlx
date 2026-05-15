@@ -22,15 +22,15 @@ js {
   const source_table = "stage_mrgtdebit_contract_hist";           // Tên bảng stage nguồn
   const partition_col = "business_date";             // Tên cột để filter ngày mới nhất
 
-  const natural_key = "contract_no";                 // Key tự nhiên
-  const tech_key = "contract_no";                    // Key hệ thống
+  const natural_key = "contract_id";                 // Key tự nhiên
+  const tech_key = "contract_id";                    // Key hệ thống
   const surrogate_key = "dim_debit_contract_key";        // Tên key bảng (nhớ để cho giống uniqueKey ở dòng 5)
 
   // ============================================================================
   // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng dim (bao gồm cả key tự nhiên, key hệ thống)
   // ============================================================================
   const dim_cols = [
-    "contract_no", "allo_date", "ref_no", "parent_date", "parent_no", 
+    "contract_id", "allo_date", "ref_no", "parent_date", "parent_no", 
     "sub_acco_no", "cust_group_id", "contr_date_from", 
     "contr_date_to", "begin_int_date", "debit_type", "amount", 
     "in_rate", "out_rate", "min_interest", "manager_in_rate", 
