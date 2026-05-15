@@ -182,3 +182,8 @@ QUALIFY ROW_NUMBER() OVER (
   PARTITION BY s.snapshot_date, s.SUB_ACCO_CD 
   ORDER BY ae.BUSINESS_DATE DESC, a.BUSINESS_DATE DESC, ae.InsertTime DESC, a.InsertTime DESC
 ) = 1
+
+post_operations {
+    ${func.updateCheckpoint('CORTSUB_ACCOUNT', ref("bronze", "CORTSUB_ACCOUNT"), 'InsertDate',ref("silver", "bronze_checkpoint"))}
+    ${func.updateCheckpoint('CORTASSET_EXT', ref("bronze", "CORTASSET_EXT"), 'BUSINESS_DATE',ref("silver", "bronze_checkpoint"))}
+}

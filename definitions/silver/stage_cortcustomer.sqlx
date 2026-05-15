@@ -1,10 +1,6 @@
--- =====================================================================================
--- SILVER STAGE VIEW
--- =====================================================================================
-
 config {
     // ===========================================================================
-    // BƯỚC 0: Config metadata của file
+    // BƯỚC 1: Config metadata của file
     // ===========================================================================
     type: "view", 
     schema: "silver",
@@ -14,7 +10,7 @@ config {
 
 js {
     // ===========================================================================
-    // BƯỚC 1: Xác định nguồn dữ liệu
+    // BƯỚC 2: Xác định nguồn dữ liệu
     // ===========================================================================
     const source_schema = "bronze";
     const source_table = "CORTCUSTOMER";
@@ -22,7 +18,7 @@ js {
     const target_partition_col = 'snapshot_date';
 
     // ===========================================================================
-    // BƯỚC 2: Xác định mức độ chi tiết và logic để deduplicate
+    // BƯỚC 3: Xác định mức độ chi tiết và logic để deduplicate
     // ===========================================================================
     const unique_key_cols = ["CUST_CD", "InsertDate"];
     const dedupe_order_by = [
@@ -32,7 +28,7 @@ js {
     
 
     // ===========================================================================
-    // BƯỚC 3: Phân loại các trường để clean và chuẩn hóa
+    // BƯỚC 4: Phân loại các trường để clean và chuẩn hóa
     // ===========================================================================
     const date_cols = [];
     const numeric_date_cols = [
@@ -64,20 +60,23 @@ js {
     ];
 
     // ===========================================================================
-    // BƯỚC 4: Thêm trường mới tùy biến
+    // BƯỚC 5: Thêm trường mới tùy biến
     // ===========================================================================
     const custom_cols = [];
 
     // ===========================================================================
-    // BƯỚC 5: Kiểm tra xem target_partition_col đã có chưa
+    // ===========================================================================
+    // BƯỚC 6: Một số biến phục vụ cho logic file (không cần đụng vào)
     // ===========================================================================
     const isPartitionInCleanedCols = cleaned_cols.some(
         col => col.toLowerCase() === target_partition_col.toLowerCase()
     );
+    const source_ref = ref(source_schema, source_table);
+    const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
 -- ===========================================================================
--- LOGIC SQL
+-- LOGIC SQL (không cần đụng vào)
 -- ===========================================================================
 SELECT
 ${
@@ -106,3 +105,7 @@ ROW_NUMBER() OVER (
     PARTITION BY ${unique_key_cols.join(", ")} 
     ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
 ) = 1
+
+post_operations {
+    ${func.updateCheckpoint(source_table, source_ref, source_partition_col, checkpoint_ref)}
+}
