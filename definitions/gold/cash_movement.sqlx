@@ -1,108 +1,113 @@
 config {
-    type: "incremental",
-    schema: "gold",
-    name: "cash_movement",
-    description: "Bảng thông tin giao dịch tiền đã được denormalized.",
-    tags: ["gold", "cash_movement", "fact"],
-    uniqueKey: ["cash_movement_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        clusterBy: ["sub_acco_no", "cust_no"]
-    },
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "gold",
+  name: "cash_movement",
+  description: "Bảng thông tin giao dịch tiền đã được denormalized.",
+  uniqueKey: ["cash_movement_key"],
+  tags: ["gold", "cash_movement", "fact"],
+  bigquery: {
+      partitionBy: "business_date",
+      clusterBy: ["sub_acco_no", "cust_no"]
+  }
 }
 
 js {
-  const source_layer = "silver";
-  const source_table = "fact_cash_movement";
-  const source_partition_col = "business_date";
-  const target_partition_col = "business_date";
-  const hash_key_name = "cash_movement_key";
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const bronze_source_table = "CORTCASH_MOVEMENT_HISTORY"; // Nguồn gốc từ Bronze để lấy checkpoint
+  const source_schema = "silver";                          // Source là layer silver
+  const source_table = "fact_cash_movement";               // Tên View ở silver (không có metadata/hash)
+  const partition_col = "business_date";                   // Cột phân vùng
 
-  // 4. DANH SÁCH CÁC TRƯỜNG ĐƯỢC LẤY TỪ BẢNG FACT
-  //(không bao gồm thông tin về các đối tượng)
+  const surrogate_key = "cash_movement_key";               // Tên key bảng Gold
+  const hash_elements = ["'VGaia'", "cash_movement_id"];   // Tự tạo hash tại layer Gold
+
+  // ============================================================================
+  // BƯỚC 3. Danh sách các trường được lấy từ bảng fact
+  // (không bao gồm thông tin về các đối tượng)
+  // ============================================================================
   const fact_cols = [
-    "business_date", "allo_date", "ref_no", "is_deleted",
+    "allo_date", "ref_no", "is_deleted",
     "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
     "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
     "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
     "internal_balance_code", "doc", "remarks", "memo"
   ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+  const source_ref = ref(source_schema, source_table);
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
 pre_operations {
-  -- 1. Declare biến
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
 
-  -- 2. Xác định target_date, start_date, end_date
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
       };`
-    : `SET start_date = ${dataform.projectConfig.vars.start_date 
-        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-      SET end_date = ${dataform.projectConfig.vars.end_date 
-        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-      SET target_date = NULL;`
+    : `SET target_date = NULL;`
   }
-  -- 3. Xử lý Drop table khi full refresh để tránh lỗi schema thay đổi
-  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
 WITH staging_data AS (
     SELECT
-        -- 1. Xác định key của bảng
-        f.${hash_key_name},
-
-        -- 2. Các cột từ bảng fact
+        -- 1. Tự tạo Surrogate Key vì Silver View đã bỏ
+        ${func.generateHash(hash_elements.map(el => 
+            el.includes("'") ? el : `CAST(f.${el} AS STRING)`
+        ))} AS ${surrogate_key},
+        ${partition_col},
+        
+        -- 2. Measures & Fact Attributes
         ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
 
-        -- 3. Giá trị của các attribte được đánh số
+        -- 3. Lookup Attributes (Dimensionless attributes)
         lkp_trade.attribute_name AS trade_type_name,
         lkp_sts.attribute_name AS status_name,
 
-        -- 4. Natural Keys & History Keys sau khi dùng joinHistory
+        -- 4. Entity Keys for Joins
         f.sub_acco_no,
         s.dim_subaccount_key AS subaccount_history_key,
         f.cust_no,
         c.dim_customer_key AS customer_history_key,
         s.broker_cd,
-        b.dim_broker_key AS broker_history_key,
+        b.dim_broker_key AS broker_history_key
         
-    FROM ${ref(source_layer, source_table)} AS f
+    FROM ${source_ref} AS f
 
-    -- Join để tìm giá trị cho các attribute được đánh số
+    -- Join lookup tables
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_trade 
         ON lkp_trade.category = 'CORTCASH_MOVEMENT__TRADE_TYPE' AND f.trade_type = lkp_trade.attribute_code
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
         ON lkp_sts.category = 'CORTCASH_MOVEMENT__STATUS' AND f.status = lkp_sts.attribute_code
         
-    -- Dùng hàm joinHistory để lấy key từng đối tượng tại đúng ngày
+    -- Join SCD2 history keys
     ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
     
-    -- --- FILTER ---
-    WHERE 
-        -- Switch between single date (incremental) and date range (full refresh)
-        ${incremental() 
-          ? `${source_partition_col} = target_date` 
-          : `${source_partition_col} BETWEEN start_date AND end_date`
-        }
+    ${when(incremental(), `WHERE f.${partition_col} = target_date`)}
 )
 
 SELECT
+    -- Quản lý ingestion metadata tại layer Gold
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     stg.*
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name} AND target.${target_partition_col} = target_date`
+  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} AND target.${partition_col} = target_date`
 )}
