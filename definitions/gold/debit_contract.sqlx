@@ -56,7 +56,7 @@ SELECT
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     dim.is_deleted,
-    fact.last_balance_date,
+    fact.last_fact_date,
 
     -- ==========================================
     -- 1. IDENTIFIERS & KEYS
