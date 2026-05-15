@@ -1,85 +1,83 @@
 config {
-    type: "incremental",
-    schema: "gold",
-    name: "debit_contract_current_balance",
-    description: "Accumulating fact table storing the latest balance snapshot for each contract.",
-    tags: ["gold", "debit_contract", "fact", "current"],
-    uniqueKey: ["contract_no"],
-    bigquery: {
-        clusterBy: ["contract_no", "sub_acco_no"]
-    }
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "gold",
+  name: "debit_contract_current_balance",
+  description: "Accumulating fact table storing the latest balance snapshot for each contract.",
+  uniqueKey: ["contract_id"],
+  tags: ["gold", "debit_contract", "fact", "current"],
+  bigquery: {
+      clusterBy: ["contract_id"]
+  }
 }
 
 js {
-  // ===========================================================================
-  // STEP 1: Define Source Configuration
-  // ===========================================================================
-  const source_layer = "silver";
-  const source_table = "fact_debit_contract_daily_balance";
-  const source_partition_col = "business_date"; 
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const bronze_source_table = "MRGTDEBIT_CONTRACT_HIST";    // Nguồn gốc từ Bronze để lấy checkpoint
+  const source_schema = "silver";                           // Source là layer silver
+  const source_table = "fact_debit_contract_daily_balance"; // Tên View ở silver (không có metadata)
+  const partition_col = "business_date";                    // Cột phân vùng từ nguồn
 
-  // ===========================================================================
-  // STEP 2: Define Factual Columns to Track
-  // ===========================================================================
-  const natural_key_name = "contract_no"
+  const natural_key = "contract_id";                      // Unique key cho bảng Current
+
+  // ============================================================================
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng fact
+  // ============================================================================
   const fact_cols = [
-    "sub_acco_no", "is_deleted", "amount", "payed_amount", "payed_interest",
+    "is_deleted", "amount", "payed_amount", "payed_interest",
     "due_interest", "payed_manager", "due_manager", "last_payed_date"
   ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+  const source_ref = ref(source_schema, source_table);
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
-/* ===========================================================================
-   PRE-OPERATIONS: Standard Date Resolution
-   =========================================================================== */
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
 pre_operations {
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
 
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
       };`
-    : `SET start_date = ${dataform.projectConfig.vars.start_date 
-        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-       SET end_date = ${dataform.projectConfig.vars.end_date 
-        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-       SET target_date = NULL;`
+    : `SET target_date = NULL;`
   }
 
-  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
-/* ===========================================================================
-   CORE SQL LOGIC
-   =========================================================================== */
 WITH staging_data AS (
     SELECT
-        ${natural_key_name},
-        ${source_partition_col} AS last_fact_date,
+        ${natural_key},
+        ${partition_col} AS last_fact_date,
         ${fact_cols.join(",\n        ")}
-    FROM ${ref(source_layer, source_table)}
+    FROM ${source_ref}
     WHERE 
         ${incremental() 
-          ? `${source_partition_col} = target_date` 
-          : `${source_partition_col} BETWEEN start_date AND end_date`
+          ? `${partition_col} = target_date` 
+          : `1=1 -- Full refresh lấy toàn bộ snapshot lịch sử`
         }
-    -- Deduplicate to ensure we only grab the absolute latest balance record
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key_name} ORDER BY ${source_partition_col} DESC) = 1
+    -- Đảm bảo chỉ lấy bản ghi mới nhất của mỗi contract trong tập dữ liệu staging
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${partition_col} DESC) = 1
 )
 
 SELECT
+    -- Duy trì thời gian nạp bản ghi đầu tiên khi chạy incremental
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     stg.*
-    
 FROM staging_data AS stg
-
--- Self-join on incremental runs to carry over historical ingestion metadata
-${when(incremental(), `LEFT JOIN ${self()} AS target ON stg.${natural_key_name} = target.${natural_key_name}`)}
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON stg.${natural_key} = target.${natural_key}`
+)}

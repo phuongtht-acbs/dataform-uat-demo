@@ -4,17 +4,17 @@ config {
     name: "debit_contract",
     description: "Current active state of Debit Contracts, combining static dimensional attributes with the latest accumulating balance facts.",
     tags: ["gold", "debit_contract", "current"],
-    uniqueKey: ["contract_no"],
+    uniqueKey: ["contract_id"],
     bigquery: {
         partitionBy: "DATE(allo_date)",
-        clusterBy: ["sub_acco_no", "contract_no", "status"],
+        clusterBy: ["sub_acco_no", "contract_id", "status"],
     }
 }
 
 js {
     const dim_table_ref = ref("gold", "debit_contract_history")
     const cur_fact_table_ref = ref("gold", "debit_contract_current_balance")
-    const unique_key_col = "contract_no"
+    const unique_key_col = "contract_id"
 }
 
 pre_operations {
@@ -61,7 +61,7 @@ SELECT
     -- ==========================================
     -- 1. IDENTIFIERS & KEYS
     -- ==========================================
-    dim.contract_no,
+    dim.contract_id,
     dim.sub_acco_no,
     dim.cust_group_id,
 

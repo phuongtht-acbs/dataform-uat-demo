@@ -1,68 +1,73 @@
 config {
-    type: "incremental",
-    schema: "gold",
-    name: "debit_contract_daily_balance",
-    description: "Daily reporting fact table for debit contract balances, fully denormalized with dimension keys.",
-    tags: ["gold", "debit_contract", "fact"],
-    uniqueKey: ["debit_contract_daily_balance_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        clusterBy: ["contract_no", "sub_acco_no"]
-    }
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "gold",
+  name: "debit_contract_daily_balance",
+  description: "Daily reporting fact table for debit contract balances, fully denormalized with dimension keys.",
+  uniqueKey: ["debit_contract_daily_balance_key"],
+  tags: ["gold", "debit_contract", "fact"],
+  bigquery: {
+      partitionBy: "business_date",
+      clusterBy: ["sub_acco_no", "contract_id"]
+  }
 }
 
 js {
-  const source_layer = "silver";
-  const source_table = "fact_debit_contract_daily_balance";
-  const source_partition_col = "business_date";
-  const target_partition_col = "business_date";
-  
-  const hash_key_name = "debit_contract_daily_balance_key";
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const bronze_source_table = "MRGTDEBIT_CONTRACT_HIST";    // Nguồn gốc từ Bronze để lấy checkpoint
+  const source_schema = "silver";                           // Source là layer silver
+  const source_table = "fact_debit_contract_daily_balance"; // Tên View ở silver
+  const partition_col = "business_date";                    // Cột phân vùng
 
+  const surrogate_key = "debit_contract_daily_balance_key"; 
+  const hash_elements = ["contract_id", "business_date"];   // Tự tạo hash tại layer Gold
+
+  // ============================================================================
+  // BƯỚC 3. Danh sách các cột Measures (không bao gồm cột từ Dimension)
+  // ============================================================================
   const fact_cols = [
     "is_deleted", "amount", "payed_amount", "payed_interest", 
     "due_interest", "payed_manager", "due_manager", "last_payed_date"
   ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+  const source_ref = ref(source_schema, source_table);
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
 pre_operations {
-  -- 1. Khai báo biến
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
 
-  -- 2. Logic xác định thời gian
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
       };`
-    : `SET start_date = ${dataform.projectConfig.vars.start_date 
-        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-       SET end_date = ${dataform.projectConfig.vars.end_date 
-        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-       SET target_date = NULL;`
+    : `SET target_date = NULL;`
   }
 
-  -- 3. Drop table khi Full Refresh
-  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
 WITH staging_data AS (
     SELECT
-        -- 1. Fact Keys & Identifiers
-        f.${hash_key_name},
-        f.business_date,
-        
-        
-        -- 2. Inherited Surrogate Keys (SCD2 Linkage)
-        f.contract_no,
-        dc.dim_debit_contract_key as debit_contract_history_key,
+        -- 1. Tự tạo Surrogate Key vì Silver View đã bỏ
+        ${func.generateHash(hash_elements.map(el => `CAST(f.${el} AS STRING)`))} AS ${surrogate_key},
+        f.${partition_col},
+
+        -- 2. Entity Keys for Joins
+        f.contract_id,
+        dc.dim_debit_contract_key AS debit_contract_history_key,
         f.sub_acco_no,
         s.dim_subaccount_key AS subaccount_history_key,
         f.cust_no,
@@ -73,24 +78,23 @@ WITH staging_data AS (
         -- 3. Factual Metrics
         ${fact_cols.map(col => `f.${col}`).join(",\n        ")}
 
-    FROM ${ref(source_layer, source_table)} AS f
+    FROM ${source_ref} AS f
     
-    -- Dùng hàm joinHistory để lấy key từng đối tượng tại đúng ngày
-    ${func.joinHistory(ref("silver", "dim_debit_contract"), "dc", "f.contract_no", "contract_no", "f.business_date")}
+    -- Join với các Dimension layer Silver để lấy Key SCD2 tại thời điểm business_date
+    ${func.joinHistory(ref("silver", "dim_debit_contract"), "dc", "f.contract_id", "contract_id", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
     
-    WHERE 
-        ${incremental() 
-          ? `f.${source_partition_col} = target_date` 
-          : `f.${source_partition_col} BETWEEN start_date AND end_date`
-        }
+    ${when(incremental(), `WHERE f.${partition_col} = target_date`)}
 )
 
 SELECT
+    -- Quản lý ingestion metadata tại layer Gold
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     stg.*
 FROM staging_data AS stg
-${when(incremental(), `LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name} AND target.${target_partition_col} = target_date`)}
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} AND target.${partition_col} = target_date`
+)}

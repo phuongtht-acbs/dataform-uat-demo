@@ -1,5 +1,5 @@
 config {
-    type: "table", // Changed from "incremental" to "view"
+    type: "table",
     schema: "gold",
     name: "debit_contract_history",
     description: "Thông tin của hợp đồng nợ.",
@@ -11,7 +11,7 @@ SELECT
     dc.dim_debit_contract_key AS debit_contract_history_key,
 
     -- 1. Core Debit Contract Attributes (From Silver)
-    dc.contract_no,
+    dc.contract_id,
     dc.allo_date,
     dc.ref_no,
     dc.parent_date,
