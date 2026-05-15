@@ -3,6 +3,7 @@ config {
     schema: "silver",
     name: "bronze_checkpoint",
     uniqueKey: ["table_name"],
+    tags: ["silver", "lookup", "daily"],
     description: "Theo dõi ngày dữ liệu mới nhất của các bảng ở lớp bronze."
 }
 
