@@ -1,0 +1,23 @@
+config {
+    type: "incremental",
+    schema: "silver",
+    name: "bronze_checkpoint",
+    uniqueKey: ["table_name"],
+    description: "Theo dõi ngày dữ liệu mới nhất của các bảng ở lớp bronze."
+}
+
+js {
+  const tables_to_track = [
+    "CORTSUB_ACCOUNT","CORTASSET_EXT","CORTASSET","CORTCUSTOMER", "BRKTBROKER",
+    "MGRTDEBIT_CONTRACT_HIST", "CORTCASH_MOVEMENT_HISTORY",
+  ];
+  
+  const default_start_date = '2024-01-01';
+}
+
+${when(!incremental(), 
+    tables_to_track.map(table => 
+        `SELECT '${table}' AS table_name, DATE('${default_start_date}') AS latest_date, CURRENT_TIMESTAMP() AS _updated_at`
+    ).join("\nUNION ALL ")
+)}
+${when(incremental(), `SELECT * FROM ${self()}`)}
