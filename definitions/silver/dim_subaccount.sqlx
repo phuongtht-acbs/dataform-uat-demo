@@ -30,7 +30,7 @@ js {
   // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng dim (bao gồm cả key tự nhiên, key hệ thống)
   // ============================================================================
   const dim_cols = [
-    "sub_acco_no", "sub_acco_cd", "is_deleted", "cust_cd", "acco_type", "algos_type",
+    "sub_acco_no", "sub_acco_cd", "is_deleted", "cust_no", "acco_type", "algos_type",
     "type_flg", "curr_cd", "bank_cd", "bank_branch_cd", "bank_acco_number",
     "bank_acco_name", "bank_acco_id_no", "bank_flg", "not_update_by_cust",
     "contract_no", "source_channel", "broker_cd", "acco_sts", "acco_flg",
