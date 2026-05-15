@@ -1,30 +1,34 @@
 config {
-    type: "incremental",
-    schema: "silver",                                   // <-- 1. EDIT: Target schema
-    name: "dim_customer",                               // <-- 2. EDIT: Target table name
-    uniqueKey: ["dim_customer_key"],                    // <-- 3. EDIT: Surrogate key name
-    tags: ["silver", "dimension", "daily", "customer"], // <-- 4. EDIT: Tag list
-    bigquery: {
-        partitionBy: "DATE(valid_from)",
-        clusterBy: ['is_current']
-    }
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "silver",
+  name: "dim_customer",
+  uniqueKey: ["dim_customer_key"],                  // Key bảng (nhớ giống với dòng 24)
+  tags: ["silver", "dimension", "daily", "customer"],
+  bigquery: {
+      partitionBy: "DATE(valid_from)",
+      clusterBy: ['is_current']
+  }
 }
 
 js {
   // ============================================================================
-  // 1. SOURCE CONFIGURATION FORM (Edit this section for each new dimension)
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
   // ============================================================================
-  const dim_config = {
-    source_schema: "silver",                // Source staging schema
-    source_table: "stage_cortcustomer",     // Source staging table name
-    
-    natural_key: "cust_no",                 // The business identifier (e.g., cust_no)
-    tech_key: "cust_cd",                    // The technical ID used to deduplicate (e.g., cust_cd)
-    partition_col: "snapshot_date",         // The date column from the source table
-    surrogate_key: "dim_customer_key"       // MUST match the uniqueKey in the config block
-  };
+  const bronze_source_table = "CORTCUSTOMER";       // Tên bảng ở lớp bronze để lấy ngày mới nhất
+  const source_schema = "silver";                    // Dataset chứa bảng stage nguồn
+  const source_table = "stage_cortcustomer";        // Tên bảng stage nguồn
+  const partition_col = "snapshot_date";            // Tên cột để filter ngày mới nhất
 
-  // 2. List of business columns to track and insert
+  const natural_key = "cust_no";                    // Key tự nhiên
+  const tech_key = "cust_cd";                       // Key hệ thống
+  const surrogate_key = "dim_customer_key";         // Tên key bảng (nhớ để cho giống uniqueKey ở dòng 5)
+
+  // ============================================================================
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng dim (bao gồm cả key tự nhiên, key hệ thống)
+  // ============================================================================
   const dim_cols = [
     "cust_no", "cust_cd", "is_deleted", "transaction_cd", "cust_family_name", "cust_given_name",
     "tax_code", "cust_type", "foreign_type", "birthday", "sex", "mobile_no",
@@ -40,24 +44,29 @@ js {
   ];
 
   // ============================================================================
-  // DO NOT EDIT BELOW THIS LINE - AUTOMATED TEMPLATE LOGIC
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
   // ============================================================================
 
   const cur_dim_cols = [
-    { name: dim_config.natural_key, type: "STRING" },
+    { name: natural_key, type: "STRING" },
     { name: "record_hash", type: "BYTES" },
-    { name: dim_config.surrogate_key, type: "BYTES" },
+    { name: surrogate_key, type: "BYTES" },
     { name: "_ingested_at", type: "TIMESTAMP" }
   ];
+  const source_ref = ref(source_schema, source_table)
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
 pre_operations {
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
   
   SET target_date = ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-      : `(SELECT MAX(${dim_config.partition_col}) FROM ${ref(dim_config.source_schema, dim_config.source_table)})`
+      : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
   };
 
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
@@ -68,17 +77,17 @@ ${when(!incremental(), `
 WITH all_history AS (
     SELECT
         ${func.generateHash(dim_cols)} AS record_hash,
-        ${dim_config.partition_col},
-        * EXCEPT(${dim_config.partition_col}, _ingested_at, _updated_at, _hash_key)
-    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
+        ${partition_col},
+        * EXCEPT(${partition_col}, _ingested_at, _updated_at, _hash_key)
+    FROM ${source_ref}
     QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY ${dim_config.natural_key}, ${dim_config.partition_col} ORDER BY ${dim_config.tech_key} DESC
+        PARTITION BY ${natural_key}, ${partition_col} ORDER BY ${tech_key} DESC
     ) = 1
 ),
 deduped_history AS (
     SELECT 
         *,
-        LAG(record_hash) OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.partition_col}) AS prev_hash
+        LAG(record_hash) OVER (PARTITION BY ${natural_key} ORDER BY ${partition_col}) AS prev_hash
     FROM all_history
 ),
 filtered_changes AS (
@@ -88,18 +97,18 @@ filtered_changes AS (
 scd2_rebuild AS (
     SELECT
         *,
-        ${dim_config.partition_col} AS valid_from_date,
-        LEAD(${dim_config.partition_col}) OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.partition_col}) AS valid_to_date
+        ${partition_col} AS valid_from_date,
+        LEAD(${partition_col}) OVER (PARTITION BY ${natural_key} ORDER BY ${partition_col}) AS valid_to_date
     FROM filtered_changes
 )
 SELECT
     run_time AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generateHash([dim_config.natural_key, "CAST(valid_from_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    ${func.generateHash([natural_key, "CAST(valid_from_date AS TIMESTAMP)"])} AS ${surrogate_key},
     CAST(valid_from_date AS TIMESTAMP) AS valid_from,
     CAST(valid_to_date AS TIMESTAMP) AS valid_to,
     (valid_to_date IS NULL) AS is_current,
-    * EXCEPT(${dim_config.partition_col}, prev_hash, valid_from_date, valid_to_date)
+    * EXCEPT(${partition_col}, prev_hash, valid_from_date, valid_to_date)
 FROM scd2_rebuild
 `)}
 
@@ -109,9 +118,9 @@ WITH staging_data AS (
     SELECT
         ${func.generateHash(dim_cols)} AS record_hash,
         ${dim_cols.join(",\n        ")}
-    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
-    WHERE ${dim_config.partition_col} = target_date
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.tech_key} DESC) = 1
+    FROM ${source_ref}
+    WHERE ${partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${tech_key} DESC) = 1
 ),
 current_dim AS (
     ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
@@ -119,14 +128,14 @@ current_dim AS (
 SELECT
     COALESCE(cur._ingested_at, run_time) AS _ingested_at,
     run_time AS _updated_at,
-    ${func.generateHash(["stg." + dim_config.natural_key, "CAST(target_date AS TIMESTAMP)"])} AS ${dim_config.surrogate_key},
+    ${func.generateHash(["stg." + natural_key, "CAST(target_date AS TIMESTAMP)"])} AS ${surrogate_key},
     CAST(target_date AS TIMESTAMP) AS valid_from,
     CAST(NULL AS TIMESTAMP) AS valid_to,
     true AS is_current,
     stg.*
 FROM staging_data AS stg
-LEFT JOIN current_dim AS cur ON stg.${dim_config.natural_key} = cur.${dim_config.natural_key}
-WHERE cur.${dim_config.natural_key} IS NULL OR stg.record_hash != cur.record_hash
+LEFT JOIN current_dim AS cur ON stg.${natural_key} = cur.${natural_key}
+WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
 `)}
 
 post_operations {
@@ -134,13 +143,13 @@ post_operations {
   MERGE ${self()} AS t
   USING (
     SELECT
-      ${dim_config.natural_key},
+      ${natural_key},
       ${func.generateHash(dim_cols)} AS record_hash
-    FROM ${ref(dim_config.source_schema, dim_config.source_table)}
-    WHERE ${dim_config.partition_col} = target_date
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${dim_config.natural_key} ORDER BY ${dim_config.tech_key} DESC) = 1
+    FROM ${source_ref}
+    WHERE ${partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${tech_key} DESC) = 1
   ) AS src
-  ON t.${dim_config.natural_key} = src.${dim_config.natural_key} AND t.is_current = true AND t.record_hash != src.record_hash
+  ON t.${natural_key} = src.${natural_key} AND t.is_current = true AND t.record_hash != src.record_hash
   WHEN MATCHED THEN 
     UPDATE SET
       t._updated_at = run_time,

@@ -1,92 +1,79 @@
 config {
-    type: "incremental",
-    schema: "silver",
-    name: "fact_debit_contract_daily_balance",
-    tags: ["silver", "debit_contract", "fact", "daily"],
-    uniqueKey: ['debit_contract_daily_balance_key'],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-    }
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "silver",
+  name: "fact_debit_contract_daily_balance",
+  uniqueKey: ["debit_contract_daily_balance_key"],
+  tags: ["silver", "debit_contract", "fact", "daily"],
+  bigquery: {
+      partitionBy: "business_date",
+      updatePartitionFilter: "business_date = target_date"
+  }
 }
 
 js {
-  // ===========================================================================
-  // STEP 1: Define Source & Grain
-  // ===========================================================================
-  const source_layer = "silver";
-  const source_table = "stage_mrgtdebit_contract_hist";
-  const source_partition_col = "business_date";
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const bronze_source_table = "MRGTDEBIT_CONTRACT_HIST";    // Tên bảng ở lớp bronze để lấy ngày mới nhất
+  const source_schema = "silver";                           // Dataset chứa bảng stage nguồn
+  const source_table = "stage_mrgtdebit_contract_hist";     // Tên bảng stage nguồn
+  const partition_col = "business_date";                    // Cột phân vùng (business_date)
 
-  // The grain of this fact table is one row per contract per day
-  const hash_key_name = "debit_contract_daily_balance_key";
-  const hash_key_elements = ["contract_no", "business_date"];
+  const surrogate_key = "debit_contract_daily_balance_key"; // Tên key bảng
+  const hash_elements = ["contract_id", "business_date"];   // Các thành phần cấu tạo nên hash key
 
-  // ===========================================================================
-  // STEP 2: Define Factual Columns (Metrics & Snapshot data)
-  // ===========================================================================
+  // ============================================================================
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng fact
+  // ============================================================================
   const fact_cols = [
-    "business_date","contract_no","allo_date","ref_no","sub_acco_no","is_deleted",
-    // Numerical metrics (Factual data)
-    "amount","payed_amount","payed_interest",
-    "due_interest","payed_manager","due_manager","last_payed_date",
+    "business_date", "contract_id", "allo_date", "ref_no", "sub_acco_no", "is_deleted",
+    "amount", "payed_amount", "payed_interest", "due_interest", "payed_manager", 
+    "due_manager", "last_payed_date"
   ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+  const source_ref = ref(source_schema, source_table);
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
 pre_operations {
-  -- 1. Khai báo biến
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
 
-  -- 2. Logic xác định thời gian
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
       };`
-    : `SET start_date = ${dataform.projectConfig.vars.start_date 
-        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-       SET end_date = ${dataform.projectConfig.vars.end_date 
-        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-       SET target_date = NULL;`
+    : `SET target_date = NULL;`
   }
 
-  -- 3. Drop table khi Full Refresh
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
-WITH staging_data AS (
+WITH base_fact AS (
     SELECT
-        -- Generate unique surrogate key for the fact record
-        ${func.generateHash(hash_key_elements.map(el => `CAST(${el} AS STRING)`))} AS ${hash_key_name},
+        ${func.generateHash(hash_elements.map(el => 
+            el.includes("'") ? el : `CAST(${el} AS STRING)`
+        ))} AS ${surrogate_key},
         ${fact_cols.join(",\n        ")}
-    FROM ${ref(source_layer, source_table)}
-    WHERE 
-        ${incremental() 
-          ? `${source_partition_col} = target_date` 
-          : `${source_partition_col} BETWEEN start_date AND end_date`
-        }
+    FROM ${source_ref}
+    ${when(incremental(), `WHERE ${partition_col} = target_date`)}
 )
 
 SELECT
-    -- Ingestion Metadata
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
-    
-    -- Metrics and Keys
     stg.*
-    
-FROM staging_data AS stg
-
--- For incremental runs, we join to preserve original _ingested_at
-${when(incremental(), `
-LEFT JOIN ${self()} AS target 
-  ON stg.${hash_key_name} = target.${hash_key_name} 
-  AND target.business_date = target_date
-`)}
+FROM base_fact AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} AND target.${partition_col} = target_date`
+)}

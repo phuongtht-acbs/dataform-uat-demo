@@ -1,24 +1,34 @@
 config {
-    type: "incremental",
-    schema: "silver",
-    name: "fact_subaccount_daily_asset_value",
-    tags: ["silver", "asset_value", "fact", "daily"],
-    uniqueKey: ["subaccount_daily_asset_value_key"],
-    bigquery: {
-        partitionBy: "business_date",
-        updatePartitionFilter: "business_date = target_date"
-    }
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "silver",
+  name: "fact_subaccount_daily_asset_value",
+  description: "Bảng Fact giá trị tài sản hàng ngày của tiểu khoản",
+  uniqueKey: ["subaccount_daily_asset_value_key"],
+  tags: ["silver", "asset_value", "fact", "daily"],
+  bigquery: {
+      partitionBy: "business_date",
+      updatePartitionFilter: "business_date = target_date"
+  }
 }
 
 js {
-  const source_layer = "silver";
-  const source_table = "stage_cortasset";
-  const source_partition_col = "business_date";
-  
-  // Hash key logic
-  const hash_key_name = "subaccount_daily_asset_value_key";
-  const hash_key_elements = ["sub_acco_no", "business_date"];
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const bronze_source_table = "CORTASSET";              // Tên bảng ở lớp bronze để lấy ngày mới nhất
+  const source_schema = "silver";                       // Dataset chứa bảng stage nguồn
+  const source_table = "stage_cortasset";               // Tên bảng stage nguồn
+  const partition_col = "business_date";                // Cột phân vùng (business_date)
 
+  const surrogate_key = "subaccount_daily_asset_value_key"; // Tên key bảng
+  const hash_elements = ["sub_acco_no", "business_date"];   // Các thành phần cấu tạo nên hash key
+
+  // ============================================================================
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng fact
+  // ============================================================================
   const fact_cols = [
     "business_date", "sub_acco_cd", "sub_acco_no", "is_deleted", "sub_acco_type", 
     "cust_cd", "cust_no", "cust_name", "branch_cd", "transaction_cd", "broker_cd", 
@@ -34,51 +44,47 @@ js {
     "t0_buy_amt", "t1_buy_amt", "t2_buy_amt", "t0_sell_amt", "t1_sell_amt", "t2_sell_amt", 
     "dividend_cash_market_amt", "dividend_sec_market_amt", "nav_bi"
   ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+  const source_ref = ref(source_schema, source_table);
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
 pre_operations {
-  -- 1. Declare biến
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
 
-  -- 2. Xác định target_date, start_date, end_date
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
       };`
-    : `SET start_date = ${dataform.projectConfig.vars.start_date 
-        ? `DATE('${dataform.projectConfig.vars.start_date}')` 
-        : `(SELECT MIN(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-      SET end_date = ${dataform.projectConfig.vars.end_date 
-        ? `DATE('${dataform.projectConfig.vars.end_date}')` 
-        : `(SELECT MAX(${source_partition_col}) FROM ${ref(source_layer, source_table)})`
-      };
-      SET target_date = NULL;`
+    : `SET target_date = NULL;`
   }
-  -- 3. Xử lý Drop table khi full refresh để tránh lỗi schema thay đổi
-  ${when(!incremental(),`DROP TABLE IF EXISTS ${self()};`)}
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
-WITH staging_data AS (
+WITH base_fact AS (
     SELECT
-        ${func.generateHash(hash_key_elements.map(el => `CAST(${el} AS STRING)`))} AS ${hash_key_name},
+        ${func.generateHash(hash_elements.map(el => 
+            el.includes("'") ? el : `CAST(${el} AS STRING)`
+        ))} AS ${surrogate_key},
         ${fact_cols.join(",\n        ")}
-    FROM ${ref(source_layer, source_table)}
-    WHERE 
-        -- Switch between single date (incremental) and date range (full refresh)
-        ${incremental() 
-          ? `${source_partition_col} = target_date` 
-          : `${source_partition_col} BETWEEN start_date AND end_date`
-        }
+    FROM ${source_ref}
+    ${when(incremental(), `WHERE ${partition_col} = target_date`)}
 )
 
 SELECT
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     stg.*
-FROM staging_data AS stg
-${when(incremental(),`LEFT JOIN ${self()} AS target ON stg.${hash_key_name} = target.${hash_key_name} AND target.${source_partition_col} = target_date`)}
+FROM base_fact AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} AND target.${partition_col} = target_date`
+)}
