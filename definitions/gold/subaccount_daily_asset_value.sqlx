@@ -16,43 +16,79 @@ config {
 
 js {
   // ============================================================================
-  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // BƯỚC 2: Cấu hình thông tin bảng fact nguồn từ lớp Silver
   // ============================================================================
-  const bronze_source_table = "CORTASSET";              // Nguồn gốc từ Bronze để lấy checkpoint
-  const source_schema = "silver";                       // Source là layer silver
-  const source_table = "fact_subaccount_daily_asset_value"; // Tên View ở silver
-  const partition_col = "business_date";                // Cột phân vùng
+  const baseTable = {
+    bronzeSourceName: "CORTASSET",
+    ref: ref("silver", "fact_subaccount_daily_asset_value"),
+    partitionCol: "business_date",
+    alias: "t",
+    columns: [
+      "is_deleted", "warning_level", "warning_num",
+      "cash_amt", "sec_val", "sec_mrg_val", "sec_pending_val", "sec_mrg_pending_val", 
+      "cash_pending_amt", "advance_amt", "bought_not_post_amt", "dividend_cash_amt", 
+      "dividend_sec_val", "dividend_right_val", "other_asset_val", "debit_margin_amt", 
+      "debit_coop_amt", "debit_debt_amt", "debit_mor_amt", "debit_other_amt", 
+      "debit_temp_amt", "total_interest_amt", "debit_margin_expired", "debit_coop_expired", 
+      "debit_mor_expired", "cash_block_amt", "credit_limit", "debt_interest_avail_payment", 
+      "need_to_addition_cash", "need_to_addition_sec", "need_to_sell", "total_asset", 
+      "total_mrg_asset", "total_debit", "margin_rate", "credit_cash_amt", "credit_sec_amt", 
+      "t0_buy_amt", "t1_buy_amt", "t2_buy_amt", "t0_sell_amt", "t1_sell_amt", "t2_sell_amt", 
+      "dividend_cash_market_amt", "dividend_sec_market_amt", "nav_bi"
+    ]
+  };
 
-  const surrogate_key = "subaccount_daily_asset_value_key"; // Tên trường key
-  const hash_elements = ["sub_acco_no", "business_date"];   // Các trường cấu thành nên 1 dòng
+  // ============================================================================
+  // BƯỚC 3: Cấu hình Surrogate Key cho bảng Fact Gold hiện tại
+  // ============================================================================
+  const surrogateKey = {
+    name: "subaccount_daily_asset_value_key",
+    elements: ["sub_acco_no", "business_date"]
+  };
 
   // ============================================================================
-  // BƯỚC 3. Danh sách các cột Measures (không bao gồm cột từ Dimension)
+  // BƯỚC 4: Cấu hình các bảng dim cần join để lấy history key và các trường liên quan
   // ============================================================================
-  const fact_cols = [
-    "is_deleted", "warning_level", "warning_num",
-    "cash_amt", "sec_val", "sec_mrg_val", "sec_pending_val", "sec_mrg_pending_val", 
-    "cash_pending_amt", "advance_amt", "bought_not_post_amt", "dividend_cash_amt", 
-    "dividend_sec_val", "dividend_right_val", "other_asset_val", "debit_margin_amt", 
-    "debit_coop_amt", "debit_debt_amt", "debit_mor_amt", "debit_other_amt", 
-    "debit_temp_amt", "total_interest_amt", "debit_margin_expired", "debit_coop_expired", 
-    "debit_mor_expired", "cash_block_amt", "credit_limit", "debt_interest_avail_payment", 
-    "need_to_addition_cash", "need_to_addition_sec", "need_to_sell", "total_asset", 
-    "total_mrg_asset", "total_debit", "margin_rate", "credit_cash_amt", "credit_sec_amt", 
-    "t0_buy_amt", "t1_buy_amt", "t2_buy_amt", "t0_sell_amt", "t1_sell_amt", "t2_sell_amt", 
-    "dividend_cash_market_amt", "dividend_sec_market_amt", "nav_bi"
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_subaccount"),
+      alias: "s",
+      leftKey: "t.sub_acco_no",
+      rightKey: "sub_acco_no",
+      columns: ["sub_acco_no", "subaccount_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_customer"),
+      alias: "c",
+      leftKey: "t.cust_no",
+      rightKey: "cust_no",
+      columns: ["cust_no", "customer_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_broker"),
+      alias: "b",
+      leftKey: "s.broker_cd",
+      rightKey: "broker_cd",
+      columns: ["broker_cd", "broker_history_key"]
+    }
   ];
 
   // ============================================================================
-  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // BƯỚC 5: Cấu hình các thuộc tính cần tra cứu giá trị chữ từ dim_attribute_lookup
   // ============================================================================
-  const source_ref = ref(source_schema, source_table);
+  const lookupAttributes = {};
+
+  // ============================================================================
+  // BƯỚC 6: Biến hỗ trợ hệ thống (Không cần sửa đổi)
+  // ============================================================================
   const checkpoint_ref = ref("silver", "bronze_checkpoint");
+  const lookup_ref = ref("silver", "dim_attribute_lookup")
 }
 
 -- ===========================================================================
--- LOGIC SQL (không cần đụng vào)
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
 -- ===========================================================================
+
 pre_operations {
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
@@ -60,7 +96,7 @@ pre_operations {
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${baseTable.bronzeSourceName}')`
       };`
     : `SET target_date = NULL;`
   }
@@ -70,32 +106,43 @@ pre_operations {
 
 WITH staging_data AS (
     SELECT
-        ${func.generateHash(hash_elements.map(el => `CAST(f.${el} AS STRING)`))} AS ${surrogate_key},
-        f.${partition_col},
-        ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
-        
-        f.sub_acco_no,s.subaccount_history_key,
-        f.cust_no,c.customer_history_key,
-        s.broker_cd,b.broker_history_key
-        
-    FROM ${source_ref} AS f
+        -- Tạo surrogate key và select trường để partition
+        ${func.generateHash(surrogateKey.elements.map(el => 
+            el.includes("'") ? el : `CAST(${baseTable.alias}.${el} AS STRING)`
+        ))} AS ${surrogateKey.name},
+        ${baseTable.alias}.${baseTable.partitionCol},
+       
+        -- Các history key và natural key từ các đối tượng khác
+        ${func.renderHistoryColumns(historyDimensions)}
 
--- ==========================================
--- Join với các bảng dim để lấy history key
--- ==========================================
-    ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
-    ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
-    ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}    
+        -- Tự động render các cột tên từ bảng tra cứu thuộc tính
+        ${func.renderLookupColumns(lookupAttributes)}
 
-    ${when(incremental(), `WHERE f.${partition_col} = target_date`)}
+        -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+        ${baseTable.columns.map(col => `${baseTable.alias}.${col}`).join(",\n            ")},
+
+    FROM ${baseTable.ref} AS ${baseTable.alias}
+    
+    -- Join để lấy history key
+    ${historyDimensions.map(
+        j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.${baseTable.partitionCol})`)
+    ).join("\n    ")}
+
+    -- Join để lookup giá trị tên thuộc tính
+    ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${lookup_ref} AS lkp_${col}
+        ON lkp_${col}.category = '${category}'
+        AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n    ")}
+
+    -- Filter ngày cần xử lý
+    ${when(incremental(), `WHERE ${baseTable.alias}.${baseTable.partitionCol} = target_date`)}
 )
 
+-- Logic xử lý incremental
 SELECT
-    -- Quản lý ingestion metadata tại layer Gold
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     stg.*
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} AND target.${partition_col} = target_date`
+  `LEFT JOIN ${self()} AS target ON stg.${surrogateKey.name} = target.${surrogateKey.name} AND target.${baseTable.partitionCol} = target_date`
 )}

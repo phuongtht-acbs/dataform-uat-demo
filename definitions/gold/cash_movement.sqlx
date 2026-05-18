@@ -10,44 +10,82 @@ config {
   tags: ["gold", "cash_movement", "fact"],
   bigquery: {
       partitionBy: "business_date",
-      clusterBy: ["sub_acco_no", "cust_no"]
+      clusterBy: ["cust_no", "sub_acco_no"]
   }
 }
 
 js {
   // ============================================================================
-  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // BƯỚC 2: Cấu hình thông tin bảng fact nguồn từ lớp Silver
   // ============================================================================
-  const bronze_source_table = "CORTCASH_MOVEMENT_HISTORY"; // Nguồn gốc từ Bronze để lấy checkpoint
-  const source_schema = "silver";                          // Source là layer silver
-  const source_table = "fact_cash_movement";               // Tên View ở silver (không có metadata/hash)
-  const partition_col = "business_date";                   // Cột phân vùng
+  const baseTable = {
+    bronzeSourceName: "CORTCASH_MOVEMENT_HISTORY",
+    ref: ref("silver", "fact_cash_movement"),
+    partitionCol: "business_date",
+    alias: "t",
+    columns: [
+      "allo_date", "ref_no", "is_deleted",
+      "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
+      "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
+      "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
+      "internal_balance_code", "doc", "remarks", "memo"
+    ]
+  };
 
-  const surrogate_key = "cash_movement_key";               // Tên key bảng Gold
-  const hash_elements = ["'VGaia'", "cash_movement_id"];   // Tự tạo hash tại layer Gold
+  // ============================================================================
+  // BƯỚC 3: Cấu hình Surrogate Key cho bảng Fact Gold hiện tại
+  // ============================================================================
+  const surrogateKey = {
+    name: "cash_movement_key",
+    elements: ["'VGaia'", "cash_movement_id"]
+  };
 
   // ============================================================================
-  // BƯỚC 3. Danh sách các trường được lấy từ bảng fact
-  // (không bao gồm thông tin về các đối tượng)
+  // BƯỚC 4: Cấu hình các bảng dim cần join để lấy history key và các trường liên quan
   // ============================================================================
-  const fact_cols = [
-    "allo_date", "ref_no", "is_deleted",
-    "entry_date", "approvement_id", "group_category", "task_cd", "src_date", "src_no",
-    "src_transaction_cd", "curr_cd", "begin_amount", "amount", "amount_type", "trade_type",
-    "after_amount", "util_cd", "util_cash_id", "status", "transaction_cd",
-    "internal_balance_code", "doc", "remarks", "memo"
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_subaccount"),
+      alias: "s",
+      leftKey: "t.sub_acco_no",
+      rightKey: "sub_acco_no",
+      columns: ["sub_acco_no", "subaccount_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_customer"),
+      alias: "c",
+      leftKey: "t.cust_no",
+      rightKey: "cust_no",
+      columns: ["cust_no", "customer_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_broker"),
+      alias: "b",
+      leftKey: "s.broker_cd",
+      rightKey: "broker_cd",
+      columns: ["broker_cd", "broker_history_key"]
+    }
   ];
 
   // ============================================================================
-  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // BƯỚC 5: Cấu hình các thuộc tính cần tra cứu giá trị chữ từ dim_attribute_lookup
   // ============================================================================
-  const source_ref = ref(source_schema, source_table);
+  const lookupAttributes = {
+    trade_type: "CORTCASH_MOVEMENT__TRADE_TYPE",
+    status:     "CORTCASH_MOVEMENT__STATUS"
+  };
+
+  // ============================================================================
+  // BƯỚC 6: Biến hỗ trợ hệ thống (Không cần sửa đổi)
+  // ============================================================================
   const checkpoint_ref = ref("silver", "bronze_checkpoint");
+  const lookup_ref = ref("silver", "dim_attribute_lookup")
 }
 
 -- ===========================================================================
--- LOGIC SQL (không cần đụng vào)
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
 -- ===========================================================================
+
 pre_operations {
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
@@ -55,7 +93,7 @@ pre_operations {
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${baseTable.bronzeSourceName}')`
       };`
     : `SET target_date = NULL;`
   }
@@ -65,46 +103,43 @@ pre_operations {
 
 WITH staging_data AS (
     SELECT
-        ${func.generateHash(hash_elements.map(el => 
-            el.includes("'") ? el : `CAST(f.${el} AS STRING)`
-        ))} AS ${surrogate_key},
-        ${partition_col},
-        
-        f.sub_acco_no, s.subaccount_history_key,
-        f.cust_no, c.customer_history_key,
-        s.broker_cd, b.broker_history_key
+        -- Tạo surrogate key và select trường để partition
+        ${func.generateHash(surrogateKey.elements.map(el => 
+            el.includes("'") ? el : `CAST(${baseTable.alias}.${el} AS STRING)`
+        ))} AS ${surrogateKey.name},
+        ${baseTable.alias}.${baseTable.partitionCol},
+       
+        -- Các history key và natural key từ các đối tượng khác
+        ${func.renderHistoryColumns(historyDimensions)}
 
-        ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
+        -- Tự động render các cột tên từ bảng tra cứu thuộc tính
+        ${func.renderLookupColumns(lookupAttributes)}
 
-        lkp_trade.attribute_name AS trade_type_name,
-        lkp_sts.attribute_name AS status_name,
+        -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+        ${baseTable.columns.map(col => `${baseTable.alias}.${col}`).join(",\n            ")},
 
-    FROM ${source_ref} AS f
-
--- ==========================================
--- Join để lấy giá trị chữ của các thuộc tính
--- ==========================================
-    LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_trade 
-        ON lkp_trade.category = 'CORTCASH_MOVEMENT__TRADE_TYPE' AND f.trade_type = lkp_trade.attribute_code
-    LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
-        ON lkp_sts.category = 'CORTCASH_MOVEMENT__STATUS' AND f.status = lkp_sts.attribute_code
-        
--- ==========================================
--- Join với các bảng dim để lấy history key
--- ==========================================
-    ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
-    ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
-    ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
+    FROM ${baseTable.ref} AS ${baseTable.alias}
     
-    ${when(incremental(), `WHERE f.${partition_col} = target_date`)}
+    -- Join để lấy history key
+    ${historyDimensions.map(
+        j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.${baseTable.partitionCol})`)
+    ).join("\n    ")}
+
+    -- Join để lookup giá trị tên thuộc tính
+    ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${lookup_ref} AS lkp_${col}
+        ON lkp_${col}.category = '${category}'
+        AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n    ")}
+
+    -- Filter ngày cần xử lý
+    ${when(incremental(), `WHERE ${baseTable.alias}.${baseTable.partitionCol} = target_date`)}
 )
 
+-- Logic xử lý incremental
 SELECT
-    -- Quản lý ingestion metadata tại layer Gold
     ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
     run_time AS _updated_at,
     stg.*
 FROM staging_data AS stg
 ${when(incremental(), 
-  `LEFT JOIN ${self()} AS target ON stg.${surrogate_key} = target.${surrogate_key} AND target.${partition_col} = target_date`
+  `LEFT JOIN ${self()} AS target ON stg.${surrogateKey.name} = target.${surrogateKey.name} AND target.${baseTable.partitionCol} = target_date`
 )}
