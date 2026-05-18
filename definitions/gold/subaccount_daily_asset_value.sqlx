@@ -70,24 +70,19 @@ pre_operations {
 
 WITH staging_data AS (
     SELECT
-        -- 1. Tự tạo Surrogate Key vì Silver View đã bỏ
         ${func.generateHash(hash_elements.map(el => `CAST(f.${el} AS STRING)`))} AS ${surrogate_key},
         f.${partition_col},
-
-        -- 2. Measures
         ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
-
-        -- 3. Entity Keys for Joins
-        f.sub_acco_no,
-        s.dim_subaccount_key AS subaccount_history_key,
-        f.cust_no,
-        c.dim_customer_key AS customer_history_key,
-        s.broker_cd,
-        b.dim_broker_key AS broker_history_key
+        
+        f.sub_acco_no,s.subaccount_history_key,
+        f.cust_no,c.customer_history_key,
+        s.broker_cd,b.broker_history_key
         
     FROM ${source_ref} AS f
-    
-    -- Join với các Dimension layer Silver để lấy Key SCD2 tại thời điểm business_date
+
+-- ==========================================
+-- Join với các bảng dim để lấy history key
+-- ==========================================
     ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}    

@@ -65,36 +65,33 @@ pre_operations {
 
 WITH staging_data AS (
     SELECT
-        -- 1. Tự tạo Surrogate Key vì Silver View đã bỏ
         ${func.generateHash(hash_elements.map(el => 
             el.includes("'") ? el : `CAST(f.${el} AS STRING)`
         ))} AS ${surrogate_key},
         ${partition_col},
         
-        -- 2. Measures & Fact Attributes
+        f.sub_acco_no, s.subaccount_history_key,
+        f.cust_no, c.customer_history_key,
+        s.broker_cd, b.broker_history_key
+
         ${fact_cols.map(col => `f.${col}`).join(",\n        ")},
 
-        -- 3. Lookup Attributes (Dimensionless attributes)
         lkp_trade.attribute_name AS trade_type_name,
         lkp_sts.attribute_name AS status_name,
 
-        -- 4. Entity Keys for Joins
-        f.sub_acco_no,
-        s.dim_subaccount_key AS subaccount_history_key,
-        f.cust_no,
-        c.dim_customer_key AS customer_history_key,
-        s.broker_cd,
-        b.dim_broker_key AS broker_history_key
-        
     FROM ${source_ref} AS f
 
-    -- Join lookup tables
+-- ==========================================
+-- Join để lấy giá trị chữ của các thuộc tính
+-- ==========================================
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_trade 
         ON lkp_trade.category = 'CORTCASH_MOVEMENT__TRADE_TYPE' AND f.trade_type = lkp_trade.attribute_code
     LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
         ON lkp_sts.category = 'CORTCASH_MOVEMENT__STATUS' AND f.status = lkp_sts.attribute_code
         
-    -- Join SCD2 history keys
+-- ==========================================
+-- Join với các bảng dim để lấy history key
+-- ==========================================
     ${func.joinHistory(ref("silver", "dim_subaccount"), "s", "f.sub_acco_no", "sub_acco_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_customer"), "c", "f.cust_no", "cust_no", "f.business_date")}
     ${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "f.business_date")}
