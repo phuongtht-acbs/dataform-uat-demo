@@ -5,7 +5,7 @@ config {
   type: "incremental",
   schema: "silver",
   name: "dim_broker",
-  uniqueKey: ["dim_broker_key"],                  // Key bảng (nhớ giống với dòng 24)
+  uniqueKey: ["broker_history_key"],                  // Key bảng (nhớ giống với dòng 27)
   tags: ["silver", "dimension", "daily", "broker"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
@@ -24,7 +24,7 @@ js {
 
   const natural_key = "broker_cd";                  // Key tự nhiên
   const tech_key = "broker_cd";                     // Key hệ thống (ví dụ: cust_cd, sub_acco_cd). Nếu không có thì điền lại key tự nhiên
-  const surrogate_key = "dim_broker_key";           // Tên key bảng (nhớ để cho giống uniqueKey ở dòng 5)
+  const surrogate_key = "broker_history_key";           // Tên key bảng (nhớ để cho giống uniqueKey ở dòng 8)
 
   // ============================================================================
   // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng dim (bao gồm cả key tự nhiên, key hệ thống)

@@ -5,7 +5,7 @@ config {
   type: "incremental",
   schema: "silver",
   name: "dim_debit_contract",
-  uniqueKey: ["dim_debit_contract_key"],                  // Key bảng (nhớ giống với dòng 24)
+  uniqueKey: ["debit_contract_history_key"],                  // Key bảng (nhớ giống với dòng 27)
   tags: ["silver", "dimension", "daily", "debit_contract"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
@@ -24,7 +24,7 @@ js {
 
   const natural_key = "contract_id";                 // Key tự nhiên
   const tech_key = "contract_id";                    // Key hệ thống
-  const surrogate_key = "dim_debit_contract_key";        // Tên key bảng (nhớ để cho giống uniqueKey ở dòng 5)
+  const surrogate_key = "debit_contract_history_key";// Key bảng (nhớ để cho giống uniqueKey ở dòng 8)
 
   // ============================================================================
   // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng dim (bao gồm cả key tự nhiên, key hệ thống)
