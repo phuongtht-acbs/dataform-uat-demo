@@ -10,118 +10,80 @@ config {
     }
 }
 
+js {
+// ============================================================================
+// BƯỚC 1: Config bảng dim nguồn từ silver
+// ============================================================================
+  const baseTable = {
+    ref: ref("silver", "dim_customer"),
+    alias: "t",
+    columns: [ // Các array columns có thể chứa cả dạng "column_a as alias_b"
+      "dim_customer_key as customer_history_key", "cust_no", "cust_cd", "cust_family_name",
+      "cust_given_name", "tax_code", "birthday", "mobile_no", "email_adrs", "email_flg",
+      "id_number", "issue_location", "issue_date", "expire_date", "country_cd", "job",
+      "com3_cust_type", "pres_name", "pres_birthday", "pres_position", "pres_country_cd",
+      "pres_id_number", "pres_issue_location", "pres_issue_date", "pres_expire_date",
+      "pres_tel_no", "pres_email_adrs", "channel_id", "number_of_sig", "acco_divide",
+      "acco_act_date", "acco_sts_date", "acco_str_date", "contract_complete_date",
+      "contract_no", "order_money_conf", "order_stock_conf", "not_collect_tax",
+      "reason_reject", "remarks", "sid", "pcod", "broker_cd", "transaction_cd",
+      "introducer_cd", "department_cd"
+    ],
+    techColumns: ["valid_from", "valid_to", "is_current"]
+  };
+// ============================================================================
+// BƯỚC 2: Config các bảng dim cần join để lấy history key
+// ============================================================================
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_broker"),
+      alias: "b",
+      leftKey: "t.broker_cd",
+      rightKey: "broker_cd",
+      columns: ["broker_history_key"]
+    }
+  ];
+// ============================================================================
+// BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
+// ============================================================================
+  const lookupAttributes = {
+    cust_type:       "CORTCUSTOMER__CUST_TYPE",
+    foreign_type:    "CORTCUSTOMER__FOREIGN_TYPE",
+    sex:             "CORTCUSTOMER__SEX",
+    acco_sts:        "CORTCUSTOMER__ACCO_STS",
+    vsd_status:      "CORTCUSTOMER__VSD_STATUS",
+    contract_status: "CORTCUSTOMER__CONTRACT_STATUS",
+    approval_cd:     "CORTCUSTOMER__APPROVAL_CD",
+    src_channel:     "CORTCUSTOMER__SRC_CHANNEL"
+  };
+
+}
+
+-- ============================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ============================================================================
+
 SELECT
-    -- 0. Surrogate Key Mapping
-    c.dim_customer_key AS customer_history_key,
-    
-    -- 1. Core Customer Attributes (From Silver)
-    c.cust_no,
-    c.cust_cd,
-    c.cust_family_name,
-    c.cust_given_name,
-    c.tax_code,
-    c.birthday,
-    c.mobile_no,
-    c.email_adrs,
-    c.email_flg,
-    c.id_number,
-    c.issue_location,
-    c.issue_date,
-    c.expire_date,
-    c.country_cd,
-    c.job,
-    c.com3_cust_type,
-    c.pres_name,
-    c.pres_birthday,
-    c.pres_position,
-    c.pres_country_cd,
-    c.pres_id_number,
-    c.pres_issue_location,
-    c.pres_issue_date,
-    c.pres_expire_date,
-    c.pres_tel_no,
-    c.pres_email_adrs,
-    c.channel_id,
-    c.number_of_sig,
-    c.acco_divide,
-    c.acco_act_date,
-    c.acco_sts_date,
-    c.acco_str_date,
-    c.contract_complete_date,
-    c.contract_no,
-    c.order_money_conf,
-    c.order_stock_conf,
-    c.not_collect_tax,
-    c.reason_reject,
-    c.remarks,
-    c.sid,
-    c.pcod,
+    -- Các trường từ bảng dim gốc
+   ${func.renderColumns(baseTable.columns, baseTable.alias)},
 
-    -- 2. Enriched Lookups (Translating codes to readable names)
-    lkp_type.attribute_name AS cust_type_name,
-    lkp_for.attribute_name AS foreign_type_name,
-    lkp_sex.attribute_name AS sex_name,
-    lkp_sts.attribute_name AS acco_sts_name,
-    lkp_vsd.attribute_name AS vsd_status_name,
-    lkp_con.attribute_name AS contract_status_name,
-    lkp_app.attribute_name AS approval_cd_name,
-    lkp_src.attribute_name AS src_channel_name,
+    -- Các history key và natural key từ các đối tượng khác
+    ${func.renderHistoryColumns(historyDimensions)}
 
-    -- 3. Keys tới các đối tượng khác
-    b.dim_broker_key as broker_history_key,
-    c.broker_cd,
-    c.transaction_cd,
-    c.introducer_cd,
-    c.department_cd,
+    -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+    ${func.renderLookupColumns(lookupAttributes)}
 
-    -- 4. Thông tin kĩ thuật SCD2
-    c.valid_from,
-    c.valid_to,
-    c.is_current,
-    c._ingested_at,
-    c._updated_at
+    -- Thông tin SCD2 từ bảng dim gốc
+    ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
 
-FROM ${ref("silver", "dim_customer")} AS c
+FROM ${baseTable.ref} AS ${baseTable.alias}
 
--- ==========================================
--- LOOKUP JOINS
--- ==========================================
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type
-  ON lkp_type.category = 'CORTCUSTOMER__CUST_TYPE'
-  AND c.cust_type = lkp_type.attribute_code
+-- Join để lấy history key
+${historyDimensions.map(
+    j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.valid_from)`)
+).join("\n")}
 
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_for
-  ON lkp_for.category = 'CORTCUSTOMER__FOREIGN_TYPE'
-  AND c.foreign_type = lkp_for.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sex
-  ON lkp_sex.category = 'CORTCUSTOMER__SEX'
-  AND c.sex = lkp_sex.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
-  ON lkp_sts.category = 'CORTCUSTOMER__ACCO_STS'
-  AND c.acco_sts = lkp_sts.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_vsd
-  ON lkp_vsd.category = 'CORTCUSTOMER__VSD_STATUS'
-  AND c.vsd_status = lkp_vsd.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con
-  ON lkp_con.category = 'CORTCUSTOMER__CONTRACT_STATUS'
-  AND c.contract_status = lkp_con.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app
-  ON lkp_app.category = 'CORTCUSTOMER__APPROVAL_CD'
-  AND c.approval_cd = lkp_app.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src
-  ON lkp_src.category = 'CORTCUSTOMER__SRC_CHANNEL'
-  AND c.src_channel = lkp_src.attribute_code
-
--- ==========================================
--- TEMPORAL JOINS
--- ==========================================
-LEFT JOIN ${ref("silver", "dim_broker")} AS b
-    ON c.broker_cd = b.broker_cd
-    AND c.valid_from >= b.valid_from
-    AND (c.valid_to IS NULL OR c.valid_from < b.valid_to)
+-- Join để lookup giá trị tên thuộc tính
+${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
+    ON lkp_${col}.category = '${category}'
+    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}

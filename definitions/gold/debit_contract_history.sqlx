@@ -3,94 +3,94 @@ config {
     schema: "gold",
     name: "debit_contract_history",
     description: "Thông tin của hợp đồng nợ.",
-    tags: ["gold", "debit_contract", "history"]
+    tags: ["gold", "debit_contract", "history"],
+    bigquery: {
+        partitionBy: 'DATE(valid_from)',
+        clusterBy: ['is_current']
+    }
 }
 
+js {
+// ============================================================================
+// BƯỚC 1: Config bảng dim nguồn từ silver
+// ============================================================================
+  const baseTable = {
+    ref: ref("silver", "dim_debit_contract"),
+    alias: "t",
+    columns: [ // Các array columns có thể chứa cả dạng "column_a as alias_b"
+      "dim_debit_contract_key as debit_contract_history_key", "contract_id", "allo_date", "ref_no",
+      "parent_date", "parent_no", "cust_group_id", "contr_date_from", "contr_date_to",
+      "begin_int_date", "debit_type", "amount", "in_rate", "out_rate", "min_interest",
+      "manager_in_rate", "manager_out_rate", "min_manager", "free_interest_days", "source_cd",
+      "contract_type", "last_extend_date", "extend_count", "transaction_cd", "calucate",
+      "decimal_point", "round_type", "int_config_id", "loan_type", "debttype_id", "int_type",
+      "status", "remarks", "is_deleted", "sub_acco_no"
+    ],
+    techColumns: ["valid_from", "valid_to", "is_current"]
+  };
+// ============================================================================
+// BƯỚC 2: Config các bảng dim cần join để lấy history key
+// ============================================================================
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_subaccount"),
+      alias: "s",
+      leftKey: "t.sub_acco_no",
+      rightKey: "sub_acco_no",
+      columns: ["dim_subaccount_key as subaccount_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_customer"),
+      alias: "c",
+      leftKey: "s.cust_no",
+      rightKey: "cust_no",
+      columns: ["dim_customer_key as customer_history_key", "cust_no"]
+    },
+    {
+      ref: ref("silver", "dim_broker"),
+      alias: "b",
+      leftKey: "s.broker_cd",
+      rightKey: "broker_cd",
+      columns: ["dim_broker_key as broker_history_key", "broker_cd"]
+    }
+  ];
+// ============================================================================
+// BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
+// ============================================================================
+  const lookupAttributes = {
+    debit_type:    "MRGTDEBIT_CONTRACT__DEBIT_TYPE",
+    contract_type: "MRGTDEBIT_CONTRACT__CONTRACT_TYPE",
+    loan_type:     "MRGTDEBIT_CONTRACT__LOAN_TYPE",
+    status:        "MRGTDEBIT_CONTRACT__STATUS"
+  };
+
+}
+
+-- ============================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ============================================================================
+
 SELECT
-    -- 0. Surrogate Key Mapping
-    dc.dim_debit_contract_key AS debit_contract_history_key,
+    -- Các trường từ bảng dim gốc
+   ${func.renderColumns(baseTable.columns, baseTable.alias)},
 
-    -- 1. Core Debit Contract Attributes (From Silver)
-    dc.contract_id,
-    dc.allo_date,
-    dc.ref_no,
-    dc.parent_date,
-    dc.parent_no,
-    dc.cust_group_id,
-    dc.contr_date_from,
-    dc.contr_date_to,
-    dc.begin_int_date,
-    dc.debit_type,
-    dc.amount,
-    dc.in_rate,
-    dc.out_rate,
-    dc.min_interest,
-    dc.manager_in_rate,
-    dc.manager_out_rate,
-    dc.min_manager,
-    dc.free_interest_days,
-    dc.source_cd,
-    dc.contract_type,
-    dc.last_extend_date,
-    dc.extend_count,
-    dc.transaction_cd,
-    dc.calucate,
-    dc.decimal_point,
-    dc.round_type,
-    dc.int_config_id,
-    dc.loan_type,
-    dc.debttype_id,
-    dc.int_type,
-    dc.status,
-    dc.remarks,
-    dc.is_deleted,
+    -- Các history key và natural key từ các đối tượng khác
+    ${func.renderHistoryColumns(historyDimensions)}
 
-    -- 2. Enriched Lookups (Translating codes to readable names)
-    lkp_deb.attribute_name AS debit_type_name,
-    lkp_con.attribute_name AS contract_type_name,
-    lkp_loa.attribute_name AS loan_type_name,
-    lkp_sts.attribute_name AS status_name,
+    -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+    ${func.renderLookupColumns(lookupAttributes)}
 
-    -- 3. Keys tới các đối tượng
-    s.dim_subaccount_key as subaccount_history_key,
-    dc.sub_acco_no,
-    c.dim_customer_key as customer_history_key,
-    c.cust_no,
-    b.dim_broker_key as broker_history_key,
-    b.broker_cd,
+    -- Thông tin SCD2 từ bảng dim gốc
+    ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
 
-    -- 4. Thông tin kĩ thuật SCD2
-    dc.valid_from,
-    dc.valid_to,
-    dc.is_current,
-    dc._ingested_at,
-    dc._updated_at
+FROM ${baseTable.ref} AS ${baseTable.alias}
 
-FROM ${ref("silver", "dim_debit_contract")} AS dc
+-- Join để lấy history key
+${historyDimensions.map(
+    j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.valid_from)`)
+).join("\n")}
 
--- ==========================================
--- LOOKUP JOINS
--- ==========================================
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_deb
-    ON lkp_deb.category = 'MRGTDEBIT_CONTRACT__DEBIT_TYPE'
-    AND dc.debit_type = lkp_deb.attribute_code
-  
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_con
-    ON lkp_con.category = 'MRGTDEBIT_CONTRACT__CONTRACT_TYPE'
-    AND dc.contract_type = lkp_con.attribute_code
-  
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_loa
-    ON lkp_loa.category = 'MRGTDEBIT_CONTRACT__LOAN_TYPE'
-    AND dc.loan_type = lkp_loa.attribute_code
-  
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
-    ON lkp_sts.category = 'MRGTDEBIT_CONTRACT__STATUS'
-    AND dc.status = lkp_sts.attribute_code
-
--- ==========================================
--- TEMPORAL JOINS
--- ==========================================
-${func.joinHistory(ref("silver", "dim_subaccount"), "s", "dc.sub_acco_no", "sub_acco_no", "DATE(dc.valid_from)")}
-${func.joinHistory(ref("silver", "dim_customer"), "c", "s.cust_no", "cust_no", "DATE(dc.valid_from)")}
-${func.joinHistory(ref("silver", "dim_broker"), "b", "s.broker_cd", "broker_cd", "DATE(dc.valid_from)")}
-
+-- Join để lookup giá trị tên thuộc tính
+${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
+    ON lkp_${col}.category = '${category}'
+    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}

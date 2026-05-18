@@ -1,5 +1,5 @@
 config {
-    type: "table", // Changed from "incremental" to "view" (or "table" if dashboard performance requires it)
+    type: "table",
     schema: "gold",
     name: "broker_history",
     description: "Lịch sử thông tin của môi giới. Lưu ý: thông tin tại thời điểm valid_from, bất kì thay đổi nào ở các đối tượng bên ngoài sau valid_from sẽ không được phản ánh vào đây",
@@ -10,66 +10,64 @@ config {
     }
 }
 
+js {
+// ============================================================================
+// BƯỚC 1: Config bảng dim nguồn từ silver
+// ============================================================================
+  const baseTable = {
+    ref: ref("silver", "dim_broker"),
+    alias: "t",
+    columns: [ // Các array columns có thể chứa cả dạng "column_a as alias_b"
+      "dim_broker_key as broker_history_key", "broker_cd", "parent_broker_cd", "family_name",
+      "given_name", "mobile_no", "email_adrs", "adrs_1", "adrs_2",
+      "id_number", "issue_location", "issue_date", "expire_date", "user_id",
+      "transaction_cd", "acco_begin_date", "acco_end_date", "ctv_corp_id",
+      "exc_begin_date", "cert_begin_date", "business_type", "broker_type_id",
+      "depend_number", "insurance_salary", "basic_salary", "end_basic_salary_month",
+      "remarks"
+    ],
+    techColumns: ["valid_from", "valid_to", "is_current"]
+  };
+// ============================================================================
+// BƯỚC 2: Config các bảng dim cần join để lấy history key
+// ============================================================================
+  const historyDimensions = [];
+// ============================================================================
+// BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
+// ============================================================================
+  const lookupAttributes = {
+    employee_type: "BRKTBROKER__EMPLOYEE_TYPE",
+    acco_sts:      "BRKTBROKER__ACCO_STS",
+    approval_cd:   "BRKTBROKER__APPROVAL_CD"
+  };
+
+}
+
+-- ============================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ============================================================================
+
 SELECT
-    -- 0. Surrogate Key Mapping
-    -- We alias the key created in Silver to represent the Gold history key
-    b.dim_broker_key AS broker_history_key,
+    -- Các trường từ bảng dim gốc
+   ${func.renderColumns(baseTable.columns, baseTable.alias)},
 
-    -- 1. Core Broker Attributes (From Silver)
-    b.broker_cd,
-    b.parent_broker_cd,
-    b.family_name,
-    b.given_name,
-    b.mobile_no,
-    b.email_adrs,
-    b.adrs_1,
-    b.adrs_2,
-    b.id_number,
-    b.issue_location,
-    b.issue_date,
-    b.expire_date,
-    b.user_id,
-    b.transaction_cd,
-    b.acco_begin_date,
-    b.acco_end_date,
-    b.ctv_corp_id,
-    b.exc_begin_date,
-    b.cert_begin_date,
-    b.business_type,
-    b.broker_type_id,
-    b.depend_number,
-    b.insurance_salary,
-    b.basic_salary,
-    b.end_basic_salary_month,
-    b.remarks,
+    -- Các history key và natural key từ các đối tượng khác
+    ${func.renderHistoryColumns(historyDimensions)}
 
-    -- 2. Enriched Lookups (Translating codes to readable names)
-    lkp_emp.attribute_name AS employee_type_name,
-    lkp_sts.attribute_name AS acco_sts_name,
-    lkp_app.attribute_name AS approval_type_name,
+    -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+    ${func.renderLookupColumns(lookupAttributes)}
 
-    -- 3. Keys dắt tới thông tin chi nhánh (sẽ bổ sung)
+    -- Thông tin SCD2 từ bảng dim gốc
+    ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
 
-    -- 4. Thông tin kĩ thuật
-    b.valid_from,
-    b.valid_to,
-    b.is_current,
-    b._ingested_at,
-    b._updated_at
+FROM ${baseTable.ref} AS ${baseTable.alias}
 
-FROM ${ref("silver", "dim_broker")} AS b
+-- Join để lấy history key
+${historyDimensions.map(
+    j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.valid_from)`)
+).join("\n")}
 
--- ==========================================
--- LOOKUP JOINS
--- ==========================================
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_emp 
-    ON lkp_emp.category = 'BRKTBROKER__EMPLOYEE_TYPE'
-    AND b.employee_type = lkp_emp.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts 
-    ON lkp_sts.category = 'BRKTBROKER__ACCO_STS'
-    AND b.acco_sts = lkp_sts.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_app 
-    ON lkp_app.category = 'BRKTBROKER__APPROVAL_CD'
-    AND b.approval_cd = lkp_app.attribute_code
+-- Join để lookup giá trị tên thuộc tính
+${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
+    ON lkp_${col}.category = '${category}'
+    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}

@@ -10,109 +10,83 @@ config {
     }
 }
 
+js {
+// ============================================================================
+// BƯỚC 1: Config bảng dim nguồn từ silver
+// ============================================================================
+  const baseTable = {
+    ref: ref("silver", "dim_subaccount"),
+    alias: "t",
+    columns: [ // Các array columns có thể chứa cả dạng "column_a as alias_b"
+      "subaccount_history_key","sub_acco_no", "sub_acco_cd", "cust_group_id",
+      "is_deleted", "acco_type","algos_type", "type_flg", "curr_cd", "bank_cd",
+      "bank_branch_cd","bank_acco_number", "bank_acco_name", "bank_acco_id_no",
+      "bank_flg","not_update_by_cust", "contract_no", "source_channel", "acco_sts",
+      "acco_flg", "trade_acco_no", "status", "source_cd", "source_sname",
+      "remarks", "open_date", "close_date", "reopen_date", "is_auto_advance",
+      "is_auto_mortgage", "retention_rate", "warning_rate", "tn_rate",
+      "call_rate", "withdraw_rate", "margin_limit_grp", "margin_limit"
+    ],
+    techColumns: ["valid_from", "valid_to", "is_current",]
+  };
+// ============================================================================
+// BƯỚC 2: Config các bảng dim cần join để lấy history key
+// ============================================================================
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_customer"),
+      alias: "c",
+      leftKey: "t.cust_no",
+      rightKey: "cust_no",
+      columns: ["customer_history_key", "cust_no"]
+    },
+    {
+      ref: ref("silver", "dim_broker"),
+      alias: "b",
+      leftKey: "t.broker_cd",
+      rightKey: "broker_cd",
+      columns: ["broker_history_key", "broker_cd", "transaction_cd"]
+    }
+  ];
+// ============================================================================
+// BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
+// ============================================================================
+  const lookupAttributes = {
+    algos_type:     "CORTSUB_ACCOUNT__ALGOS_TYPE",
+    acco_type:      "CORTSUB_ACCOUNT__ACCO_TYPE",
+    acco_sts:       "CORTSUB_ACCOUNT__ACCO_STS",
+    status:         "CORTSUB_ACCOUNT__STATUS",
+    source_channel: "CORTSUB_ACCOUNT__SOURCE_CHANNEL",
+    bank_flg:       "CORTSUB_ACCOUNT__BANK_FLG"
+  };
+
+}
+
+-- ============================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ============================================================================
+
 SELECT
-    -- 0. Surrogate Key Mapping
-    s.dim_subaccount_key AS subaccount_history_key,
+    -- Các trường từ bảng dim gốc
+   ${func.renderColumns(baseTable.columns, baseTable.alias)},
 
-    -- 1. Core Subaccount Attributes (From Silver)
-    s.sub_acco_no,
-    s.sub_acco_cd,
-    s.cust_group_id,
-    s.is_deleted,
-    s.acco_type,
-    s.algos_type,
-    s.type_flg,
-    s.curr_cd,
-    s.bank_cd,
-    s.bank_branch_cd,
-    s.bank_acco_number,
-    s.bank_acco_name,
-    s.bank_acco_id_no,
-    s.bank_flg,
-    s.not_update_by_cust,
-    s.contract_no,
-    s.source_channel,
-    s.acco_sts,
-    s.acco_flg,
-    s.trade_acco_no,
-    s.status,
-    s.source_cd,
-    s.source_sname,
-    s.remarks,
-    s.open_date,
-    s.close_date,
-    s.reopen_date,
-    s.is_auto_advance,
-    s.is_auto_mortgage,
-    s.retention_rate,
-    s.warning_rate,
-    s.tn_rate,
-    s.call_rate,
-    s.withdraw_rate,
-    s.margin_limit_grp,
-    s.margin_limit,
+   -- Các history key và natural key từ các đối tượng khác
+    ${func.renderHistoryColumns(historyDimensions)}
 
-    -- 2. Tên các attribute được số hóa
-    lkp_alg.attribute_name AS algos_type_name,
-    lkp_type.attribute_name AS acco_type_name,
-    lkp_ast.attribute_name AS acco_sts_name,
-    lkp_sts.attribute_name AS status_name,
-    lkp_src.attribute_name AS source_channel_name,
-    lkp_bnk.attribute_name AS bank_flg_name,
+    -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+    ${func.renderLookupColumns(lookupAttributes)}
 
-    -- 3. Keys dắt tới broker và customer
-    b.dim_broker_key as broker_history_key,
-    s.broker_cd,
-    b.transaction_cd,
-    c.dim_customer_key as customer_history_key,
-    c.cust_no,
+    -- Thông tin SCD2 từ bảng dim gốc
+    ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
 
-    -- 4. Thông tin kĩ thuật SCD2
-    s.valid_from,
-    s.valid_to,
-    s.is_current,
-    s._ingested_at,
-    s._updated_at
+FROM ${baseTable.ref} AS ${baseTable.alias}
 
-FROM ${ref("silver", "dim_subaccount")} AS s
+-- Join để lấy history key
+${historyDimensions.map(
+    j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.valid_from)`)
+).join("\n")}
 
--- ==========================================
--- LOOKUP JOINS
--- ==========================================
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_type 
-    ON lkp_type.category = 'CORTSUB_ACCOUNT__ACCO_TYPE'
-    AND s.acco_type = lkp_type.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_sts
-    ON lkp_sts.category = 'CORTSUB_ACCOUNT__STATUS'
-    AND s.status = lkp_sts.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_src
-    ON lkp_src.category = 'CORTSUB_ACCOUNT__SOURCE_CHANNEL'
-    AND s.source_channel = lkp_src.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_bnk
-    ON lkp_bnk.category = 'CORTSUB_ACCOUNT__BANK_FLG'
-    AND s.bank_flg = lkp_bnk.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_ast
-    ON lkp_ast.category = 'CORTSUB_ACCOUNT__ACCO_STS'
-    AND s.acco_sts = lkp_ast.attribute_code
-
-LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_alg
-    ON lkp_alg.category = 'CORTSUB_ACCOUNT__ALGOS_TYPE'
-    AND s.algos_type = lkp_alg.attribute_code
-
--- ==========================================
--- TEMPORAL JOINS
--- ==========================================
-
-LEFT JOIN ${ref("silver", "dim_customer")} AS c
-    ON s.cust_no = c.cust_no
-    AND s.valid_from >= c.valid_from
-    AND (c.valid_to IS NULL OR s.valid_from < c.valid_to)
-
-LEFT JOIN ${ref("silver", "dim_broker")} AS b
-    ON s.broker_cd = b.broker_cd
-    AND s.valid_from >= b.valid_from
-    AND (b.valid_to IS NULL OR s.valid_from < b.valid_to)
+-- Join để lookup giá trị tên thuộc tính
+${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
+    ON lkp_${col}.category = '${category}'
+    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}
