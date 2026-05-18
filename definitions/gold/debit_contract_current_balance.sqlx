@@ -15,27 +15,23 @@ config {
 
 js {
   // ============================================================================
-  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // BƯỚC 2: Cấu hình thông tin bảng fact nguồn từ lớp Silver
   // ============================================================================
-  const bronze_source_table = "MRGTDEBIT_CONTRACT_HIST";    // Nguồn gốc từ Bronze để lấy checkpoint
-  const source_schema = "silver";                           // Source là layer silver
-  const source_table = "fact_debit_contract_daily_balance"; // Tên View ở silver (không có metadata)
-  const partition_col = "business_date";                    // Cột phân vùng từ nguồn
+  const baseTable = {
+    bronzeSourceName: "MRGTDEBIT_CONTRACT_HIST",
+    ref: ref("silver", "fact_debit_contract_daily_balance"),
+    partitionCol: "business_date",
+    columns: [
+      "is_deleted", "amount", "payed_amount", "payed_interest",
+      "due_interest", "payed_manager", "due_manager", "last_payed_date"
+    ]
+  };
 
-  const natural_key = "contract_id";                      // Unique key cho bảng Current
-
-  // ============================================================================
-  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng fact
-  // ============================================================================
-  const fact_cols = [
-    "is_deleted", "amount", "payed_amount", "payed_interest",
-    "due_interest", "payed_manager", "due_manager", "last_payed_date"
-  ];
+  const natural_key = "contract_id";
 
   // ============================================================================
-  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // BƯỚC 3: Biến hỗ trợ hệ thống (Không cần sửa đổi)
   // ============================================================================
-  const source_ref = ref(source_schema, source_table);
   const checkpoint_ref = ref("silver", "bronze_checkpoint");
 }
 
@@ -49,7 +45,7 @@ pre_operations {
   ${incremental() 
     ? `SET target_date = ${dataform.projectConfig.vars.target_date 
         ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${baseTable.bronzeSourceName}')`
       };`
     : `SET target_date = NULL;`
   }
@@ -60,16 +56,16 @@ pre_operations {
 WITH staging_data AS (
     SELECT
         ${natural_key},
-        ${partition_col} AS last_fact_date,
-        ${fact_cols.join(",\n        ")}
-    FROM ${source_ref}
+        ${baseTable.partitionCol} AS last_fact_date,
+        ${baseTable.columns.join(",\n        ")}
+    FROM ${baseTable.ref}
     WHERE 
         ${incremental() 
-          ? `${partition_col} = target_date` 
+          ? `${baseTable.partitionCol} = target_date` 
           : `1=1 -- Full refresh lấy toàn bộ snapshot lịch sử`
         }
     -- Đảm bảo chỉ lấy bản ghi mới nhất của mỗi contract trong tập dữ liệu staging
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${partition_col} DESC) = 1
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${baseTable.partitionCol} DESC) = 1
 )
 
 SELECT
