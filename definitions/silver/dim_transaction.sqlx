@@ -1,0 +1,85 @@
+config {
+  type: "incremental",
+  schema: "silver",
+  name: "dim_transaction",
+  uniqueKey: ["transaction_history_key"],
+  tags: ["silver", "dimension", "daily", "transaction"],
+  bigquery: {
+      partitionBy: "DATE(valid_from)",
+      clusterBy: ['is_current']
+  }
+}
+
+js {
+  const source_schema = "silver";
+  const source_table = "stage_msttbranch";
+  const partition_col = "snapshot_date";
+
+  const natural_key = "transaction_cd";
+  const tech_key = "transaction_cd"; 
+  const surrogate_key = "transaction_history_key";
+
+  const dim_cols = [
+    "transaction_cd", "is_deleted", "branch_cd", "company_cd", "location_cd", 
+    "branch_sname", "branch_name", "branch_adrs_1", "branch_adrs_2", "tel_no", 
+    "fax_no", "email_adrs", "zip_cd", "deputy", "broker_cd", "bank_acco_id", 
+    "open_cust_display", "vsd_branch", "online_default", "status", "transaction_flg"
+  ];
+
+  const cur_dim_cols = [
+    { name: natural_key, type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: surrogate_key, type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+
+  const source_ref = ref(source_schema, source_table);
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE DEFAULT DATE_SUB(CURRENT_DATE('Asia/Saigon'), INTERVAL 1 DAY);
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+
+WITH staging_data AS (
+    SELECT
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${dim_cols.join(",\n        ")}
+    FROM ${source_ref}
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${tech_key} DESC) = 1
+),
+current_dim AS (
+    ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
+)
+SELECT
+    COALESCE(cur._ingested_at, run_time) AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash(["stg." + natural_key, incremental() ? "CAST(target_date AS TIMESTAMP)" : "CAST('2025-01-01' AS TIMESTAMP)"])} AS ${surrogate_key},
+    ${incremental() ? "CAST(target_date AS TIMESTAMP)" : "CAST('2025-01-01' AS TIMESTAMP)"} AS valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
+    true AS is_current,
+    stg.*
+FROM staging_data AS stg
+LEFT JOIN current_dim AS cur ON stg.${natural_key} = cur.${natural_key}
+WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
+
+post_operations {
+  ${when(incremental(), `
+  MERGE ${self()} AS t
+  USING (
+    SELECT
+      ${natural_key},
+      ${func.generateHash(dim_cols)} AS record_hash
+    FROM ${source_ref}
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${tech_key} DESC) = 1
+  ) AS src
+  ON t.${natural_key} = src.${natural_key} AND t.is_current = true AND t.record_hash != src.record_hash
+  WHEN MATCHED THEN 
+    UPDATE SET
+      t._updated_at = run_time,
+      t.valid_to = CAST(target_date AS TIMESTAMP),
+      t.is_current = false;
+  `)}
+}

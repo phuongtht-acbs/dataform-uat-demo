@@ -1,0 +1,73 @@
+config {
+    type: "view", 
+    schema: "silver",
+    name: "stage_msttbranch",
+    tags: ["silver", "stage", "daily", "transaction"]
+}
+
+js {
+    const source_schema = "bronze";
+    const source_table = "MSTTBRANCH"; 
+    
+    const unique_key_cols = ["TRANSACTION_CD"];
+    const dedupe_order_by = [
+        {field: "UPD_DATE_TIME", sort: "DESC"}
+    ];
+
+    const date_cols = [];
+    const numeric_date_cols = [];
+    
+    // Map DEL_CD to boolean flag (0 = Active, 9 = Deleted)
+    const boolean_cols = [
+        {source: "DEL_CD", field_name: "is_deleted", true_value: 9},
+        {source: "OPEN_CUST_DISPLAY", field_name: "open_cust_display", true_value: 1},
+        {source: "ONLINE_DEFAULT", field_name: "online_default", true_value: 1}
+    ];
+
+    const string_cols = [
+        "TRANSACTION_CD", "BRANCH_CD", "COMPANY_CD", "BRANCH_SNAME", 
+        "BRANCH_NAME", "BRANCH_ADRS_1", "BRANCH_ADRS_2", "TEL_NO", 
+        "FAX_NO", "EMAIL_ADRS", "ZIP_CD", "DEPUTY", "BROKER_CD", 
+        "REG_USER_ID", "UPD_USER_ID"
+    ];
+
+    const integer_cols = [
+        "LOCATION_CD", "BANK_ACCO_ID", "VSD_BRANCH", "STATUS", "TRANSACTION_FLG"
+    ];
+
+    const numeric_cols = [];
+
+    const cleaned_cols = [
+        "REG_DATE_TIME", "UPD_DATE_TIME"
+    ];
+
+    const custom_cols = [
+        {
+            field_name: "snapshot_date",
+            field_query: `DATE_SUB(CURRENT_DATE('Asia/Saigon'), INTERVAL 1 DAY)`
+        }
+    ];
+
+    const source_ref = ref(source_schema, source_table);
+}
+
+SELECT
+${
+    [
+        ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")
+}
+FROM ${source_ref}
+
+QUALIFY
+ROW_NUMBER() OVER (
+    PARTITION BY ${unique_key_cols.join(", ")} 
+    ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+) = 1

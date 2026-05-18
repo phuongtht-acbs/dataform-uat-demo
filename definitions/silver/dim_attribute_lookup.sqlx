@@ -55,6 +55,10 @@ js {
     "MRGTDEBIT_CONTRACT__CALUCATE": { 1: "Ngày", 2: "Tháng", 3: "Năm 360 ngày", 4: "Năm 365 ngày" },
     "MRGTDEBIT_CONTRACT__ROUND_TYPE": { 1: "Round", 2: "Round Up", 3: "Floor", 4: "Ceiling" },
     "MRGTDEBIT_CONTRACT__DECIMAL_POINT": { "-3": "Three Frac Point", "-2": "Two Frac Point", "-1": "One Frac Point", 0: "Đơn vị", 1: "Chục", 2: "Trăm", 3: "Nghìn" },
+  // --- MSTTBRANCH / TRANSACTION Metadata ---
+    "MSTTBRANCH__STATUS": { 1: "Opening", 2: "Closed" },
+    "MSTTBRANCH__TRANSACTION_FLG": { 0: "Hội sở", 1: "Chi nhánh", 2: "Điểm giao dịch", 3: "Phòng giao dịch" },
+    "MSTTBRANCH__VSD_BRANCH": { 1: "Trụ sở chính VSD tại Hà Nội", 2: "Chi nhánh VSD tại TP.HCM" },
   };
 
   /**
