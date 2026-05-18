@@ -119,6 +119,33 @@ function updateCheckpoint(entryName, sourceRef, dateCol, checkpointRef) {
   `;
 }
 
+/**
+ * Prepends a table alias prefix to an array of column projection strings.
+ * Automatically accommodates standard SQL aliases written inside the text string.
+ * @param {string[]} cols - Array of raw columns or "col AS alias" strings.
+ * @param {string} alias - The table identifier prefix.
+ */
+function renderColumns(cols, alias) {
+  return cols.map(c => `${alias}.${c}`).join(",\n    ");
+}
+
+/**
+ * Renders columns for all history dimensions and safely appends a trailing comma only if not empty.
+ */
+function renderHistoryColumns(historyDimensions) {
+  if (!historyDimensions || historyDimensions.length === 0) return "";
+  return historyDimensions.map(d => d.columns.map(c => `${d.alias}.${c}`).join(",\n    ")).join(",\n    ") + ",";
+}
+
+/**
+ * Renders columns for lookup attributes and safely appends a trailing comma only if not empty.
+ */
+function renderLookupColumns(lookupAttributes) {
+  const keys = Object.keys(lookupAttributes || {});
+  if (keys.length === 0) return "";
+  return keys.map(col => `lkp_${col}.attribute_name AS ${col}_name`).join(",\n    ") + ",";
+}
+
 module.exports = { 
     cleanNullString, 
     cleanNullDate,
@@ -127,5 +154,8 @@ module.exports = {
     getCurrentDim,
     joinHistory,
     expireHistory,
-    updateCheckpoint
+    updateCheckpoint,
+    renderColumns,
+    renderHistoryColumns,
+    renderLookupColumns
 };
