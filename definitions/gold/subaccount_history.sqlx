@@ -45,7 +45,14 @@ js {
       alias: "b",
       leftKey: "t.broker_cd",
       rightKey: "broker_cd",
-      columns: ["broker_history_key", "broker_cd", "transaction_cd"]
+      columns: ["broker_history_key", "broker_cd"]
+    },
+    {
+      ref: ref("silver", "dim_transaction"),
+      alias: "tr",
+      leftKey: "b.transaction_cd",
+      rightKey: "transaction_cd",
+      columns: ["transaction_history_key", "transaction_cd"]
     }
   ];
 // ============================================================================

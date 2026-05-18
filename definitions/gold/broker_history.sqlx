@@ -31,7 +31,15 @@ js {
 // ============================================================================
 // BƯỚC 2: Config các bảng dim cần join để lấy history key
 // ============================================================================
-  const historyDimensions = [];
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_transaction"),
+      alias: "tr",
+      leftKey: "t.transaction_cd",
+      rightKey: "transaction_cd",
+      columns: ["transaction_history_key"]
+    }
+  ];
 // ============================================================================
 // BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
 // ============================================================================
