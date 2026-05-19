@@ -1,0 +1,79 @@
+config {
+    type: "table",
+    schema: "gold",
+    name: "security_history",
+    description: "Lịch sử thông tin mã chứng khoán (MSTTSECURITIES). Lưu ý: thông tin tại thời điểm valid_from, bất kỳ thay đổi nào ở các đối tượng bên ngoài sau valid_from sẽ không được phản ánh vào đây",
+    tags: ["gold", "security", "history"],
+    bigquery: {
+        partitionBy: 'DATE(valid_from)',
+        clusterBy: ['is_current']
+    }
+}
+
+js {
+// ============================================================================
+// BƯỚC 1: Config bảng dim nguồn từ silver
+// ============================================================================
+  const baseTable = {
+    ref: ref("silver", "dim_security"),
+    alias: "t",
+    columns: [ 
+      "security_history_key", "sec_cd", "is_deleted", "country_cd", "sec_class", 
+      "sec_type", "sec_name", "sec_sname", "curr_cd", "market_cd", "capital_value", 
+      "listed_max_qty", "foregin_max_qty", "province_cd", "custodian_cd", 
+      "custodian_branch_cd", "isin_cd", "face_val", "unit_size_of_trading", 
+      "issue_date", "listed_date", "end_date", "bond_type", "is_order_stopped", 
+      "is_stamp_duty", "warning_rate", "max_rate",
+    ],
+    techColumns: ["valid_from", "valid_to", "is_current"]
+  };
+// ============================================================================
+// BƯỚC 2: Config các bảng dim cần join để lấy history key
+// ============================================================================
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_market"),
+      alias: "mk",
+      leftKey: "t.market_cd",
+      rightKey: "market_cd",
+      columns: ["market_history_key"]
+    }
+  ];
+// ============================================================================
+// BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
+// ============================================================================
+  const lookupAttributes = {
+    sec_type: "MSTTSECURITIES__SEC_TYPE",
+    bond_type: "MSTTSECURITIES__BOND_TYPE"
+  };
+
+}
+
+-- ============================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ============================================================================
+
+SELECT
+    -- Các trường từ bảng dim gốc
+    ${func.renderColumns(baseTable.columns, baseTable.alias)},
+
+    -- Các history key và natural key từ các đối tượng khác
+    ${func.renderHistoryColumns(historyDimensions)}
+
+    -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+    ${func.renderLookupColumns(lookupAttributes)}
+
+    -- Thông tin SCD2 từ bảng dim gốc
+    ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
+
+FROM ${baseTable.ref} AS ${baseTable.alias}
+
+-- Join để lấy history key
+${historyDimensions.map(
+    j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.valid_from)`)
+).join("\n")}
+
+-- Join để lookup giá trị tên thuộc tính
+${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
+    ON lkp_${col}.category = '${category}'
+    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}

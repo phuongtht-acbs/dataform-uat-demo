@@ -59,6 +59,22 @@ js {
     "MSTTBRANCH__STATUS": { 1: "Opening", 2: "Closed" },
     "MSTTBRANCH__TRANSACTION_FLG": { 0: "Hội sở", 1: "Chi nhánh", 2: "Điểm giao dịch", 3: "Phòng giao dịch" },
     "MSTTBRANCH__VSD_BRANCH": { 1: "Trụ sở chính VSD tại Hà Nội", 2: "Chi nhánh VSD tại TP.HCM" },
+  // --- MSTTSECURITIES Metadata ---
+    "MSTTSECURITIES__SEC_TYPE": {
+      1: "Cổ phiếu", 
+      2: "Chứng chỉ quỹ", 
+      3: "Trái phiếu", 
+      4: "Chứng chỉ quỹ ETF", 
+      5: "Chứng quyền", 
+      6: "Tín phiếu", 
+      7: "Trái phiếu riêng lẻ" 
+    },
+    "MSTTSECURITIES__BOND_TYPE": { 
+      1: "Trái phiếu chính phủ", 
+      2: "Trái phiếu chính quyền địa phương", 
+      3: "Trái phiếu doanh nghiệp", 
+      4: "Trái phiếu CP bảo lãnh" 
+    }
   };
 
   /**

@@ -1,0 +1,154 @@
+config {
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "silver",
+  name: "dim_security",
+  uniqueKey: ["security_history_key"],                  // Key bảng (nhớ giống với dòng 27)
+  tags: ["silver", "dimension", "daily", "security"],
+  bigquery: {
+      partitionBy: "DATE(valid_from)",
+      clusterBy: ['is_current']
+  }
+}
+
+js {
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const bronze_source_table = "MSTTSECURITIES";     // Tên bảng ở lớp bronze để lấy ngày mới nhất
+  const source_schema = "silver";                   // Dataset chứa bảng stage nguồn
+  const source_table = "stage_msttsecurities";      // Tên bảng stage nguồn
+  const partition_col = "snapshot_date";            // Tên cột để filter ngày mới nhất
+
+  const natural_key = "sec_cd";                     // Key tự nhiên
+  const tech_key = "sec_cd";                        // Key hệ thống (Sử dụng key tự nhiên làm key kĩ thuật theo xác nhận)
+  const surrogate_key = "security_history_key";     // Tên key bảng (nhớ để cho giống uniqueKey ở dòng 8)
+
+  // ============================================================================
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng dim (bao gồm cả key tự nhiên, key hệ thống)
+  // ============================================================================
+  const dim_cols = [
+    "sec_cd", "is_deleted", "country_cd", "sec_class", "sec_type", "sec_name", 
+    "sec_sname", "curr_cd", "market_cd", "capital_value", "listed_max_qty", 
+    "foregin_max_qty", "province_cd", "custodian_cd", "custodian_branch_cd", 
+    "isin_cd", "face_val", "unit_size_of_trading", "issue_date", "listed_date", 
+    "end_date", "bond_type", "is_order_stopped", "is_stamp_duty", "warning_rate", 
+    "max_rate"
+  ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+
+  const cur_dim_cols = [
+    { name: natural_key, type: "STRING" },
+    { name: "record_hash", type: "BYTES" },
+    { name: surrogate_key, type: "BYTES" },
+    { name: "_ingested_at", type: "TIMESTAMP" }
+  ];
+  const source_ref = ref(source_schema, source_table)
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
+}
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+  
+  SET target_date = ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
+  };
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
+${when(!incremental(), `
+-- 1. Full Refresh Path: Lead-Lag Logic
+WITH all_history AS (
+    SELECT
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${partition_col},
+        ${dim_cols.join(",\n        ")}
+    FROM ${source_ref}
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY ${natural_key}, ${partition_col} ORDER BY ${tech_key} DESC
+    ) = 1
+),
+deduped_history AS (
+    SELECT 
+        *,
+        LAG(record_hash) OVER (PARTITION BY ${natural_key} ORDER BY ${partition_col}) AS prev_hash
+    FROM all_history
+),
+filtered_changes AS (
+    SELECT * FROM deduped_history 
+    WHERE prev_hash IS NULL OR record_hash != prev_hash
+),
+scd2_rebuild AS (
+    SELECT
+        *,
+        ${partition_col} AS valid_from_date,
+        LEAD(${partition_col}) OVER (PARTITION BY ${natural_key} ORDER BY ${partition_col}) AS valid_to_date
+    FROM filtered_changes
+)
+SELECT
+    run_time AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash([natural_key, "CAST(valid_from_date AS TIMESTAMP)"])} AS ${surrogate_key},
+    CAST(valid_from_date AS TIMESTAMP) AS valid_from,
+    CAST(valid_to_date AS TIMESTAMP) AS valid_to,
+    (valid_to_date IS NULL) AS is_current,
+    * EXCEPT(${partition_col}, prev_hash, valid_from_date, valid_to_date)
+FROM scd2_rebuild
+`)}
+
+${when(incremental(), `
+-- 2. Incremental Path: Comparison Logic
+WITH staging_data AS (
+    SELECT
+        ${func.generateHash(dim_cols)} AS record_hash,
+        ${dim_cols.join(",\n        ")}
+    FROM ${source_ref}
+    WHERE ${partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${tech_key} DESC) = 1
+),
+current_dim AS (
+    ${func.getCurrentDim(incremental(), self(), cur_dim_cols)}
+)
+SELECT
+    COALESCE(cur._ingested_at, run_time) AS _ingested_at,
+    run_time AS _updated_at,
+    ${func.generateHash(["stg." + natural_key, "CAST(target_date AS TIMESTAMP)"])} AS ${surrogate_key},
+    CAST(target_date AS TIMESTAMP) AS valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
+    true AS is_current,
+    stg.*
+FROM staging_data AS stg
+LEFT JOIN current_dim AS cur ON stg.${natural_key} = cur.${natural_key}
+WHERE cur.${natural_key} IS NULL OR stg.record_hash != cur.record_hash
+`)}
+
+post_operations {
+  ${when(incremental(), `
+  MERGE ${self()} AS t
+  USING (
+    SELECT
+      ${natural_key},
+      ${func.generateHash(dim_cols)} AS record_hash
+    FROM ${source_ref}
+    WHERE ${partition_col} = target_date
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_key} ORDER BY ${tech_key} DESC) = 1
+  ) AS src
+  ON t.${natural_key} = src.${natural_key} AND t.is_current = true AND t.record_hash != src.record_hash
+  WHEN MATCHED THEN 
+    UPDATE SET
+      t._updated_at = run_time,
+      t.valid_to = CAST(target_date AS TIMESTAMP),
+      t.is_current = false;
+  `)}
+}

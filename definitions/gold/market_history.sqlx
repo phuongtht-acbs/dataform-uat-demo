@@ -1,0 +1,63 @@
+config {
+    type: "table",
+    schema: "gold",
+    name: "market_history",
+    description: "Lịch sử thông tin sàn giao dịch (MSTTMARKET). Lưu ý: thông tin tại thời điểm valid_from, bất kỳ thay đổi nào ở các đối tượng bên ngoài sau valid_from sẽ không được phản ánh vào đây",
+    tags: ["gold", "market", "history"],
+    bigquery: {
+        partitionBy: 'DATE(valid_from)',
+        clusterBy: ['is_current']
+    }
+}
+
+js {
+// ============================================================================
+// BƯỚC 1: Config bảng dim nguồn từ silver
+// ============================================================================
+  const baseTable = {
+    ref: ref("silver", "dim_market"),
+    alias: "t",
+    columns: [ 
+      "market_history_key", "market_cd", "is_deleted", "market_sname", "market_name", "country_cd"
+    ],
+    techColumns: ["valid_from", "valid_to", "is_current"]
+  };
+// ============================================================================
+// BƯỚC 2: Config các bảng dim cần join để lấy history key
+// ============================================================================
+  const historyDimensions = [];
+// ============================================================================
+// BƯỚC 3: Config các thuộc tính cần tra cứu giá trị
+// ============================================================================
+  const lookupAttributes = {};
+
+}
+
+-- ============================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ============================================================================
+
+SELECT
+    -- Các trường từ bảng dim gốc
+    ${func.renderColumns(baseTable.columns, baseTable.alias)},
+
+    -- Các history key và natural key từ các đối tượng khác
+    ${func.renderHistoryColumns(historyDimensions)}
+
+    -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+    ${func.renderLookupColumns(lookupAttributes)}
+
+    -- Thông tin SCD2 từ bảng dim gốc
+    ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
+
+FROM ${baseTable.ref} AS ${baseTable.alias}
+
+-- Join để lấy history key
+${historyDimensions.map(
+    j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.valid_from)`)
+).join("\n")}
+
+-- Join để lookup giá trị tên thuộc tính
+${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
+    ON lkp_${col}.category = '${category}'
+    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}

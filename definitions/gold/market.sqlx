@@ -1,0 +1,18 @@
+config {
+    // ===========================================================================
+    // BƯỚC 1: Config metadata của file
+    // ===========================================================================
+    type: "view",
+    schema: "gold",
+    name: "market",
+    description: "Thông tin hiện tại của các sàn giao dịch",
+    tags: ["gold", "market", "current"]
+}
+
+-- ===========================================================================
+-- LOGIC SQL (Lấy dữ liệu mới nhất từ bảng History)
+-- ===========================================================================
+SELECT 
+  * EXCEPT(valid_from, valid_to, is_current)
+FROM ${ref("gold", "market_history")}
+WHERE is_current = true

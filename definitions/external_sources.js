@@ -5,4 +5,6 @@ declare({schema: 'bronze', name: "CORTASSET_EXT"}),
 declare({schema: 'bronze', name: "BRKTBROKER"}),
 declare({schema:"bronze",name:"CORTASSET"}),
 declare({schema:"bronze",name:"MRGTDEBIT_CONTRACT_HIST"}),
-declare({schema:"bronze",name:"MSTTBRANCH"})
+declare({schema:"bronze",name:"MSTTBRANCH"}),
+declare({schema:"bronze",name:"MSTTMARKET"}),
+declare({schema:"bronze",name:"MSTTSECURITIES"})
