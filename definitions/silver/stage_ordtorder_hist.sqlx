@@ -1,0 +1,115 @@
+config {
+    // ===========================================================================
+    // BƯỚC 1: Config metadata của file
+    // ===========================================================================
+    type: "view", 
+    schema: "silver",
+    name: "stage_ordtorder_hist",
+    tags: ["silver", "stage", "daily", "ordtorder_hist"]
+}
+
+js {
+    // ===========================================================================
+    // BƯỚC 2: Xác định nguồn dữ liệu
+    // ===========================================================================
+    const source_schema = "bronze";
+    const source_table = "ORDTORDER_HIST"; 
+    const source_partition_col = 'TRADE_DATE';
+    const target_partition_col = 'trade_date';
+    
+    // ===========================================================================
+    // BƯỚC 3: Xác định mức độ chi tiết và logic để deduplicate
+    // ===========================================================================
+    const unique_key_cols = ["TRADE_DATE", "ORG_ORDER_NO"];
+    const dedupe_order_by = [
+        {field: "UPD_DATE_TIME", sort: "DESC"}
+    ];
+    
+    // ===========================================================================
+    // BƯỚC 4: Phân loại các trường để clean và chuẩn hóa
+    // ===========================================================================
+    const date_cols = ["TRADE_DATE"];
+    const numeric_date_cols = ["PAYMENT_DATE"];
+    const boolean_cols = [
+        {source: "DEL_CD", field_name: "is_deleted", true_value: 9},
+        {source: "RESOLVED_FLAG", field_name: "is_resolved", true_value: 1},
+        {source: "OVER_FLAG", field_name: "is_over_limited", true_value: 1},
+        {source: "ONLINE_FLAG", field_name: "is_online", true_value: 1}
+    ];
+    const string_cols = [
+        "ORG_ORDER_NO", "ORDER_NO", "CONFIRM_NO", "SESSION_CD", "ORG_ORD_TYPE", 
+        "ORD_TYPE", "ORD_CHANEL", "SEC_CD", "SUB_ACCO_NO", "CUST_NO", "CUST_FLAG", 
+        "CUST_FAMILY_NAME", "CUST_GIVEN_NAME", "CUST_TRANSACTION_CD", "FIRM_NO", 
+        "TRADER_ID", "BANK_BRANCH_CD", "TAG", "NOTES", "REMARKS", "TRANSACTION_CD", 
+        "BROKER_CD", "INTRO_CD", "GROUP_CD", "MORT_CONTR_NO", "CLIENT_INFO", 
+        "CONFIRM_CLIENT_INFO", "ORD_SRC_NO", "CL_ORD_ID", "ODD_FLAG", "STATUS", 
+        "APR_USER_ID", "CONFIRM_USER_ID", "REG_USER_ID", "UPD_USER_ID"
+    ];
+    const integer_cols = [
+        "REQ_NO", "REQ_TYPE", "MARKET_CD", "SEC_TYPE", "TRADE_TYPE", "SIDE_TYPE", 
+        "SUB_ACCO_CD", "CUST_CD", "SERVICE_TYPE", "SETTLE_UNIT", "LEADER_FLAG", 
+        "ACTIVE_STOP", "ORD_SRC_TYPE", "CONFIRM_STATUS", "PRIORITY"
+    ];
+    const numeric_cols = [
+        "ORD_QTY", "ORD_PRICE", "ORD_AMT", "STOP_PRICE", "ORD_QTY2", "CASH_QTY", 
+        "FEE_RATE", "FEE_AMT", "COMMI_RATE", "COMMI_AMT", "TAX_RATE", "TAX_AMT", 
+        "TRANS_RATE", "TRANS_AMT", "RIGHT_TAX_RATE", "RIGHT_TAX_QTY", "RIGHT_TAX_AMT", 
+        "MARGIN_RATE", "MARGIN_AMT", "PUB_QTY", "PUB_PRICE", "CAN_QTY", "MAT_QTY", 
+        "MAT_AMT", "AVAIL_AFTER", "AVAIL_BEFORE", "CURRENT_RATE_BEFORE", "CURRENT_RATE_AFTER"
+    ];
+    const cleaned_cols = [
+        "REQ_TIME", "CONFIRM_TIME", "APR_DATE_TIME", "CONFIRM_DATE_TIME", 
+        "REG_DATE_TIME", "UPD_DATE_TIME"
+    ];
+
+    // ===========================================================================
+    // BƯỚC 5: Thêm trường mới tùy biến
+    // ===========================================================================
+    const custom_cols = [];
+
+    // ===========================================================================
+    // BƯỚC 6: Một số biến phục vụ cho logic file (không cần đụng vào)
+    // ===========================================================================
+    const isPartitionInCleanedCols = cleaned_cols.some(
+        col => col.toLowerCase() === target_partition_col.toLowerCase()
+    ) || date_cols.some(
+        col => col.toLowerCase() === target_partition_col.toLowerCase()
+    );
+    const source_ref = ref(source_schema, source_table);
+    const checkpoint_ref = ref("silver", "bronze_checkpoint");
+}
+
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
+SELECT
+${
+    [
+        // Thêm partition column nếu chưa có ở dưới
+        ...(!isPartitionInCleanedCols ? [`${source_partition_col} AS ${target_partition_col}`] : []),
+        
+        // Thêm logic tùy biến
+        ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),
+
+        // Clean và chuẩn hóa kiểu dữ liệu
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")
+}
+FROM ${ref(source_schema, source_table)}
+
+-- Deduplicate để đảm bảo tính duy nhất của View
+QUALIFY
+ROW_NUMBER() OVER (
+    PARTITION BY ${unique_key_cols.join(", ")} 
+    ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+) = 1
+
+post_operations {
+    ${func.updateCheckpoint(source_table, source_ref, source_partition_col, checkpoint_ref)}
+}

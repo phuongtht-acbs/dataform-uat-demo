@@ -55,11 +55,11 @@ js {
     "MRGTDEBIT_CONTRACT__CALUCATE": { 1: "Ngày", 2: "Tháng", 3: "Năm 360 ngày", 4: "Năm 365 ngày" },
     "MRGTDEBIT_CONTRACT__ROUND_TYPE": { 1: "Round", 2: "Round Up", 3: "Floor", 4: "Ceiling" },
     "MRGTDEBIT_CONTRACT__DECIMAL_POINT": { "-3": "Three Frac Point", "-2": "Two Frac Point", "-1": "One Frac Point", 0: "Đơn vị", 1: "Chục", 2: "Trăm", 3: "Nghìn" },
-  // --- MSTTBRANCH / TRANSACTION Metadata ---
+    // --- MSTTBRANCH / TRANSACTION Metadata ---
     "MSTTBRANCH__STATUS": { 1: "Opening", 2: "Closed" },
     "MSTTBRANCH__TRANSACTION_FLG": { 0: "Hội sở", 1: "Chi nhánh", 2: "Điểm giao dịch", 3: "Phòng giao dịch" },
     "MSTTBRANCH__VSD_BRANCH": { 1: "Trụ sở chính VSD tại Hà Nội", 2: "Chi nhánh VSD tại TP.HCM" },
-  // --- MSTTSECURITIES Metadata ---
+    // --- MSTTSECURITIES Metadata ---
     "MSTTSECURITIES__SEC_TYPE": {
       1: "Cổ phiếu", 
       2: "Chứng chỉ quỹ", 
@@ -74,6 +74,51 @@ js {
       2: "Trái phiếu chính quyền địa phương", 
       3: "Trái phiếu doanh nghiệp", 
       4: "Trái phiếu CP bảo lãnh" 
+    },
+    // --- ORDTORDER Metadata ---
+    "ORDTORDER__ORD_SRC_TYPE": {
+      0: "Lệnh thường",
+      1: "Lệnh trước giờ",
+      2: "Lệnh sửa HOSE",
+      3: "Lệnh điều kiện",
+      4: "Lệnh chiến thuật",
+      6: "Lệnh phái sinh",
+      7: "Lệnh ALGO"
+    },
+    "ORDTORDER__STATUS": {
+      "K": "Order in prequeue",
+      "H": "Order in queue",
+      "D": "Order canceled in queue (by Cust)",
+      "R": "Order canceled in queue (by Gate)",
+      "P": "Order pending to approve",
+      "S": "Order approved",
+      "X": "Order canceled in company",
+      "E": "Order sending to exchange",
+      "W": "Order waiting confirm from Exchange",
+      "A": "Order approved by exchange",
+      "G": "Order rejected by exchange",
+      "O": "Order pending to match",
+      "M": "Order matched",
+      "C": "Order canceled"
+    },
+    "ORDTORDER__ORD_CHANEL": {
+      1: "Back office (Vgaia)",
+      2: "Online trading",
+      3: "Front trading (FrontOnline)",
+      4: "Web mobile",
+      5: "Mobile trading",
+      6: "HomeTrading",
+      7: "Floor Trading",
+      8: "SMS trading",
+      9: "Tel trading"
+    },
+    "ORDTORDER__TRADE_TYPE": {1: "Bán",2: "Mua"},
+    "ORDTORDER__SERVICE_TYPE": {
+      1: "Cash",
+      2: "Margin",
+      3: "ShortSale",
+      4: "DayTrading",
+      5: "Mortgage"
     }
   };
 

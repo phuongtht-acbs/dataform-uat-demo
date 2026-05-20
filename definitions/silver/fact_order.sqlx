@@ -1,0 +1,48 @@
+config {
+    // ===========================================================================
+    // BƯỚC 1: Config metadata của file
+    // ===========================================================================
+    type: "view",
+    schema: "silver",
+    name: "fact_order",
+    description: "View thông tin lệnh gốc và lệnh đẩy vào sàn nguồn",
+    tags: ["silver", "fact", "order", "view"]
+}
+
+js {
+    // ============================================================================
+    // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+    // ============================================================================
+    const source_schema = "silver";
+    const source_table = "stage_ordtorder_hist";
+
+    // ============================================================================
+    // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng view
+    // ============================================================================
+    const cols = [
+        "trade_date", "org_order_no", "is_deleted", "req_no", "req_type", "req_time", 
+        "order_no", "confirm_no", "confirm_time", "market_cd", "session_cd", 
+        "org_ord_type", "ord_type", "ord_chanel", "sec_cd", "sec_type", "trade_type", 
+        "side_type", "ord_qty", "ord_price", "ord_amt", "stop_price", "ord_qty2", 
+        "cash_qty", "sub_acco_cd", "sub_acco_no", "cust_cd", "cust_no", "cust_flag", 
+        "cust_family_name", "cust_given_name", "cust_transaction_cd", "firm_no", 
+        "trader_id", "bank_branch_cd", "fee_rate", "fee_amt", "commi_rate", "commi_amt", 
+        "tax_rate", "tax_amt", "trans_rate", "trans_amt", "right_tax_rate", "right_tax_qty", 
+        "right_tax_amt", "margin_rate", "margin_amt", "pub_qty", "pub_price", "can_qty", 
+        "mat_qty", "mat_amt", "tag", "notes", "remarks", "transaction_cd", "broker_cd", 
+        "intro_cd", "service_type", "settle_unit", "payment_date", "is_resolved", 
+        "leader_flag", "is_over_limited", "is_online", "active_stop", "group_cd", 
+        "mort_contr_no", "avail_after", "avail_before", "current_rate_before", 
+        "current_rate_after", "client_info", "confirm_client_info", "ord_src_type", 
+        "ord_src_no", "cl_ord_id", "odd_flag", "priority", "status", "apr_date_time", 
+        "apr_user_id", "confirm_status", "confirm_date_time"
+    ];
+    const source_ref = ref(source_schema, source_table);
+}
+
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
+SELECT
+    ${cols.join(",\n    ")}
+FROM ${source_ref}
