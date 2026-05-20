@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "fact_cash_movement",
   description: "View lịch sử giao dịch tiền của khách hàng từ hệ thống Core",
-  tags: ["silver", "fact", "view"]
+  tags: ["silver", "fact", "cash_movement", "view"]
 }
 
 js {
