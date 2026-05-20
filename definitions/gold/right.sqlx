@@ -1,0 +1,11 @@
+config {
+    type: "table",
+    schema: "gold",
+    name: "right",
+    description: "Thông tin hiện tại của quyền chứng khoán",
+    tags: ["gold", "right", "current"]
+}
+
+SELECT *
+FROM ${ref("gold", "right_history")}
+WHERE is_current = true

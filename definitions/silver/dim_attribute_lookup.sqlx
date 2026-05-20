@@ -119,6 +119,45 @@ js {
       3: "ShortSale",
       4: "DayTrading",
       5: "Mortgage"
+    },
+    // --- RHTTRIGHT_INFO Metadata ---
+    "RHTTRIGHT_INFO__RIGHT_TYPE": {
+      1: "Tiền mặt",
+      2: "Cổ tức cổ phiếu",
+      3: "Cổ phiếu thưởng",
+      4: "Đăng ký PHT",
+      5: "Trái phiếu CĐ",
+      6: "Sáp nhập",
+      7: "Chia tách",
+      8: "Hủy niêm yết",
+      9: "Thay đổi loại hình đăng ký",
+      10: "Đăng ký lưu ký",
+      11: "Biểu quyết",
+      12: "Hoàn trả vốn góp",
+      13: "Đáo hạn trái phiếu",
+      14: "Mua lại vốn góp của TCPH",
+      15: "Quyền mua trái phiếu chuyển đổi",
+      16: "Mua lại trái phiếu trước hạn",
+      17: "Chuyển đổi CP ưu đãi sang PT",
+      18: "Đáo hạn CW"
+    },
+    "RHTTRIGHT_INFO__SEC_STATE": {0: "Tất cả",1: "Phổ thông",2: "Hạn chế"},
+    "RHTTRIGHT_INFO__STATUS": {
+      0: "Chưa duyệt",
+      1: "Đang duyệt",
+      2: "Đã duyệt",
+      4: "Hủy chờ duyệt",
+      9: "Đã huỷ"
+    },
+    "RHTTRIGHT_INFO__ROUNDTYPE": {1: "Round",2: "Round Up",3: "Floor",4: "Celling"},
+    "RHTTRIGHT_INFO__DECIMAL_PLACE": {0: "Đơn vị",1: "Chục",2: "Trăm",3: "Nghìn"},
+    "RHTTRIGHT_INFO__FORCE_ALTER": {
+      0: "Không bắt buộc",
+      1: "Có bắt buộc",
+      2: "Tự nguyện thành CP",
+      3: "Bắt buộc thành tiền hoặc CP",
+      4: "Tự nguyện thành tiền hoặc CP",
+      5: "Tự nguyện thành tiền"
     }
   };
 

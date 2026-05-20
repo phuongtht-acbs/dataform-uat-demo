@@ -8,5 +8,6 @@ declare({schema:"bronze",name:"MRGTDEBIT_CONTRACT_HIST"}),
 declare({schema:"bronze",name:"MSTTBRANCH"}),
 declare({schema:"bronze",name:"MSTTMARKET"}),
 declare({schema:"bronze",name:"CORTSEC_BALANCE_HISTORY"}),
-declare({ schema: "bronze", name: "ORDTORDER_HIST" });
+declare({ schema: "bronze", name: "ORDTORDER_HIST" }),
+declare({ schema: "bronze", name: "RHTTRIGHT_INFO" }),
 declare({schema:"bronze",name:"MSTTSECURITIES"})
