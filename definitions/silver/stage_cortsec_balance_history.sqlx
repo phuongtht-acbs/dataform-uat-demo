@@ -1,0 +1,101 @@
+config {
+    // ===========================================================================
+    // BƯỚC 1: Config metadata của file
+    // ===========================================================================
+    type: "view", 
+    schema: "silver",
+    name: "stage_cortsec_balance_history",
+    tags: ["silver", "stage", "daily", "holding"]
+}
+
+js {
+    // ===========================================================================
+    // BƯỚC 2: Xác định nguồn dữ liệu
+    // ===========================================================================
+    const source_schema = "bronze";
+    const source_table = "CORTSEC_BALANCE_HISTORY";
+    const source_partition_col = 'BALANCE_DATE';
+    const target_partition_col = 'business_date';
+
+    // ===========================================================================
+    // BƯỚC 3: Xác định mức độ chi tiết và logic để deduplicate
+    // ===========================================================================
+    const unique_key_cols = ["SUB_ACCO_NO", "SEC_CD", "BALANCE_DATE"];
+    const dedupe_order_by = [
+        {field: "InsertTime", sort: "DESC"},
+        {field: "SUB_ACCO_CD", sort: "DESC"},
+        {field: "UPD_DATE_TIME", sort: "DESC"}
+    ];
+    
+
+    // ===========================================================================
+    // BƯỚC 4: Phân loại các trường để clean và chuẩn hóa
+    // ===========================================================================
+    const date_cols = [];
+    const numeric_date_cols = [];
+    const boolean_cols = [
+        {source: "DEL_CD", field_name: "is_deleted", true_value: 9},
+    ];
+    const string_cols = [
+        "SUB_ACCO_NO", "SEC_CD", "TRANSACTION_CD"
+    ];
+    const integer_cols = [
+        "SUB_ACCO_CD", "SEC_TYPE_CD"
+    ];
+    const numeric_cols = [
+        "BALANCE_QUANTITY", "BEGIN_QUANTITY", "DEBIT_QUANTITY", "CREDIT_QUANTITY", "PENDING_QUANTITY"
+    ];
+    const cleaned_cols = [
+        "InsertDate", "InsertTime",
+        "REG_DATE_TIME", "UPD_DATE_TIME", "REG_USER_ID", "UPD_USER_ID"
+    ];
+
+    // ===========================================================================
+    // BƯỚC 5: Thêm trường mới tùy biến
+    // ===========================================================================
+    const custom_cols = [];
+
+    // ===========================================================================
+    // BƯỚC 6: Một số biến phục vụ cho logic file (không cần đụng vào)
+    // ===========================================================================
+    const isPartitionInCleanedCols = cleaned_cols.some(
+        col => col.toLowerCase() === target_partition_col.toLowerCase()
+    );
+    const source_ref = ref(source_schema, source_table);
+    const checkpoint_ref = ref("silver", "bronze_checkpoint");
+}
+
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
+SELECT
+${
+    [
+        // Thêm partition column nếu chưa có ở dưới
+        ...(!isPartitionInCleanedCols ? [`${source_partition_col} AS ${target_partition_col}`] : []),
+        
+        // Thêm logic tùy biến
+        ...custom_cols.map(c => `${c.field_query} AS ${c.field_name}`),
+
+        // Clean và chuẩn hóa kiểu dữ liệu
+        ...date_cols.map(col => `${func.cleanNullDate(col)} AS ${col.toLowerCase()}`),
+        ...numeric_date_cols.map(col => `${func.parseNumericDate(col)} AS ${col.toLowerCase()}`),
+        ...string_cols.map(col => `${func.cleanNullString(col)} AS ${col.toLowerCase()}`),
+        ...integer_cols.map(col => `CAST(${col} AS INT64) AS ${col.toLowerCase()}`),
+        ...numeric_cols.map(col => `CAST(${col} AS NUMERIC) AS ${col.toLowerCase()}`),
+        ...boolean_cols.map(b => `CAST(${b.source} AS INT64) = ${b.true_value} AS ${b.field_name}`),
+        ...cleaned_cols.map(col => `${col} AS ${col.toLowerCase()}`)
+    ].join(",\n        ")
+}
+FROM ${ref(source_schema, source_table)}
+
+-- Deduplicate để đảm bảo tính duy nhất của View
+QUALIFY
+ROW_NUMBER() OVER (
+    PARTITION BY ${unique_key_cols.join(", ")} 
+    ORDER BY ${dedupe_order_by.map(o => `${o.field} ${o.sort}`).join(", ")}
+) = 1
+
+post_operations {
+    ${func.updateCheckpoint(source_table, source_ref, source_partition_col, checkpoint_ref)}
+}

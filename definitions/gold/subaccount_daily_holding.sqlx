@@ -1,0 +1,155 @@
+config {
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "gold",
+  name: "subaccount_daily_holding",
+  description: "Bảng Fact Gold: Số dư chứng khoán hàng ngày tích hợp thông tin Dimension",
+  uniqueKey: ["subaccount_daily_holding_key"],
+  tags: ["gold", "holding", "fact"],
+  bigquery: {
+      partitionBy: "business_date",
+      clusterBy: ["sub_acco_no", "sec_cd"]
+  }
+}
+
+js {
+  // ============================================================================
+  // BƯỚC 2: Cấu hình thông tin bảng fact nguồn từ lớp Silver
+  // ============================================================================
+  const baseTable = {
+    bronSourceName: "CORTSEC_BALANCE_HISTORY",
+    ref: ref("silver", "fact_subaccount_daily_holding"),
+    partitionCol: "business_date",
+    alias: "t",
+    columns: [
+      "is_deleted", "sec_type_cd",
+      "balance_quantity", "begin_quantity", "debit_quantity", "credit_quantity", "pending_quantity"
+    ]
+  };
+
+  // ============================================================================
+  // BƯỚC 3: Cấu hình Surrogate Key cho bảng Fact Gold hiện tại
+  // ============================================================================
+  const surrogateKey = {
+    name: "subaccount_daily_holding_key",
+    elements: ["sub_acco_no", "sec_cd", "business_date"]
+  };
+
+  // ============================================================================
+  // BƯỚC 4: Cấu hình các bảng dim cần join để lấy history key và các trường liên quan
+  // ============================================================================
+  const historyDimensions = [
+    {
+      ref: ref("silver", "dim_subaccount"),
+      alias: "s",
+      leftKey: "t.sub_acco_no",
+      rightKey: "sub_acco_no",
+      columns: ["sub_acco_no", "subaccount_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_security"),
+      alias: "sec",
+      leftKey: "t.sec_cd",
+      rightKey: "sec_cd",
+      columns: ["sec_cd", "security_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_customer"),
+      alias: "c",
+      leftKey: "s.cust_no",
+      rightKey: "cust_no",
+      columns: ["cust_no", "customer_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_broker"),
+      alias: "b",
+      leftKey: "s.broker_cd",
+      rightKey: "broker_cd",
+      columns: ["broker_cd", "broker_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_transaction"),
+      alias: "tx",
+      leftKey: "t.transaction_cd",
+      rightKey: "transaction_cd",
+      columns: ["transaction_cd", "transaction_history_key"]
+    }
+  ];
+
+  // ============================================================================
+  // BƯỚC 5: Cấu hình các thuộc tính cần tra cứu giá trị chữ từ dim_attribute_lookup
+  // ============================================================================
+  const lookupAttributes = {
+    sec_type_cd: "MSTTSECURITIES__SEC_TYPE"
+  };
+
+  // ============================================================================
+  // BƯỚC 6: Biến hỗ trợ hệ thống (Không cần sửa đổi)
+  // ============================================================================
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
+  const lookup_ref = ref("silver", "dim_attribute_lookup")
+}
+
+-- ===========================================================================
+-- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
+-- ===========================================================================
+
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${baseTable.bronzeSourceName}')`
+      };`
+    : `SET target_date = NULL;`
+  }
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+WITH staging_data AS (
+    SELECT
+        -- Tạo surrogate key và select trường để partition
+        ${func.generateHash(surrogateKey.elements.map(el => 
+            el.includes("'") ? el : `CAST(${baseTable.alias}.${el} AS STRING)`
+        ))} AS ${surrogateKey.name},
+        ${baseTable.alias}.${baseTable.partitionCol},
+       
+        -- Các history key và natural key từ các đối tượng khác
+        ${func.renderHistoryColumns(historyDimensions)}
+
+        -- Tự động render các cột tên từ bảng tra cứu thuộc tính
+        ${func.renderLookupColumns(lookupAttributes)}
+
+        -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
+        ${baseTable.columns.map(col => `${baseTable.alias}.${col}`).join(",\n            ")},
+
+    FROM ${baseTable.ref} AS ${baseTable.alias}
+    
+    -- Join để lấy history key
+    ${historyDimensions.map(
+        j => func.joinHistory(j.ref, j.alias, j.leftKey, j.rightKey, `DATE(${baseTable.alias}.${baseTable.partitionCol})`)
+    ).join("\n    ")}
+
+    -- Join để lookup giá trị tên thuộc tính
+    ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${lookup_ref} AS lkp_${col}
+        ON lkp_${col}.category = '${category}'
+        AND CAST(${baseTable.alias}.${col} AS STRING) = lkp_${col}.attribute_code`).join("\n    ")}
+
+    -- Filter ngày cần xử lý
+    ${when(incremental(), `WHERE ${baseTable.alias}.${baseTable.partitionCol} = target_date`)}
+)
+
+-- Logic xử lý incremental
+SELECT
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.*
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON stg.${surrogateKey.name} = target.${surrogateKey.name} AND target.${baseTable.partitionCol} = target_date`
+)}

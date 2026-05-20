@@ -1,0 +1,40 @@
+config {
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "view",
+  schema: "silver",
+  name: "fact_subaccount_daily_holding",
+  description: "View số dư chứng khoán hàng ngày của tiểu khoản",
+  tags: ["silver", "fact", "holding", "view"]
+}
+
+js {
+  // ============================================================================
+  // BƯỚC 2. Điền thông tin về nguồn dữ liệu, key và độ chi tiết
+  // ============================================================================
+  const source_schema = "silver";                      // Dataset chứa bảng stage nguồn
+  const source_table = "stage_cortsec_balance_history";               // Tên bảng stage nguồn
+
+  // ============================================================================
+  // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng view
+  // ============================================================================
+  const cols = [
+    "business_date", "sub_acco_cd", "sub_acco_no", "is_deleted", 
+    "sec_type_cd", "sec_cd", "balance_quantity", "begin_quantity", 
+    "debit_quantity", "credit_quantity", "pending_quantity", "transaction_cd"
+  ];
+
+  // ============================================================================
+  // BƯỚC 4: Một số biến hỗ trợ logic (không cần đụng vào)
+  // ============================================================================
+  const source_ref = ref(source_schema, source_table);
+}
+
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
+
+SELECT
+    ${cols.join(",\n    ")}
+FROM ${source_ref}

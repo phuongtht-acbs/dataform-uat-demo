@@ -1,0 +1,79 @@
+config {
+  // ===========================================================================
+  // BƯỚC 1: Config metadata của file
+  // ===========================================================================
+  type: "incremental",
+  schema: "gold",
+  name: "subaccount_current_holding",
+  description: "Accumulating fact table storing the latest holding value for each subaccount and security.",
+  uniqueKey: ["sub_acco_no", "sec_cd"],
+  tags: ["gold", "holding", "fact", "current"],
+  bigquery: {
+      clusterBy: ["sub_acco_no", "sec_cd"]
+  }
+}
+
+js {
+  // ============================================================================
+  // BƯỚC 2: Cấu hình thông tin bảng fact nguồn từ lớp Silver
+  // ============================================================================
+  const baseTable = {
+    bronzeSourceName: "CORTSEC_BALANCE_HISTORY",
+    ref: ref("silver", "fact_subaccount_daily_holding"),
+    partitionCol: "business_date",
+    columns: [
+      "is_deleted", "sec_type_cd", 
+      "balance_quantity", "begin_quantity", "debit_quantity", "credit_quantity", "pending_quantity"
+    ]
+  };
+
+  const natural_keys = ["sub_acco_no", "sec_cd"];
+
+  // ============================================================================
+  // BƯỚC 3: Biến hỗ trợ hệ thống (Không cần sửa đổi)
+  // ============================================================================
+  const checkpoint_ref = ref("silver", "bronze_checkpoint");
+}
+
+-- ===========================================================================
+-- LOGIC SQL (không cần đụng vào)
+-- ===========================================================================
+pre_operations {
+  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+  DECLARE target_date DATE;
+
+  ${incremental() 
+    ? `SET target_date = ${dataform.projectConfig.vars.target_date 
+        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+        : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${baseTable.bronzeSourceName}')`
+      };`
+    : `SET target_date = NULL;`
+  }
+
+  ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
+}
+
+WITH staging_data AS (
+    SELECT
+        ${natural_keys.join(",\n        ")},
+        ${baseTable.partitionCol} AS last_fact_date,
+        ${baseTable.columns.join(",\n        ")}
+    FROM ${baseTable.ref}
+    WHERE 
+        ${incremental() 
+          ? `${baseTable.partitionCol} = target_date` 
+          : `1=1 -- Full refresh lấy toàn bộ dữ liệu lịch sử để tìm snapshot mới nhất`
+        }
+    -- Lấy bản ghi mới nhất của mỗi sub_acco_no và sec_cd trong tập dữ liệu
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ${natural_keys.join(", ")} ORDER BY ${baseTable.partitionCol} DESC) = 1
+)
+
+SELECT
+    -- Duy trì thời gian nạp bản ghi đầu tiên khi chạy incremental
+    ${when(incremental(), `COALESCE(target._ingested_at, run_time)`, `run_time`)} AS _ingested_at,
+    run_time AS _updated_at,
+    stg.*
+FROM staging_data AS stg
+${when(incremental(), 
+  `LEFT JOIN ${self()} AS target ON ${natural_keys.map(k => `stg.${k} = target.${k}`).join(" AND ")}`
+)}
