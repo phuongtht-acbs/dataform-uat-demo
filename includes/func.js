@@ -134,7 +134,10 @@ function renderColumns(cols, alias) {
  */
 function renderHistoryColumns(historyDimensions) {
   if (!historyDimensions || historyDimensions.length === 0) return "";
-  return historyDimensions.map(d => d.columns.map(c => `${d.alias}.${c}`).join(",\n    ")).join(",\n    ") + ",";
+  
+  return historyDimensions
+    .map(d => d.columns.map(c => `${d.alias}.${c.trim()}`).join(",\n    "))
+    .join(",\n    ") + ",";
 }
 
 /**
