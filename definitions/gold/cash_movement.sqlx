@@ -10,7 +10,8 @@ config {
   tags: ["gold", "cash_movement", "fact"],
   bigquery: {
       partitionBy: "business_date",
-      clusterBy: ["cust_no", "sub_acco_no"]
+      clusterBy: ["cust_no", "sub_acco_no"],
+      updatePartitionFilter: "business_date = target_date"
   }
 }
 
@@ -45,26 +46,30 @@ js {
   // ============================================================================
   const historyDimensions = [
     {
-      ref: ref("silver", "dim_subaccount"),
-      alias: "s",
-      leftKey: "t.sub_acco_no",
-      rightKey: "sub_acco_no",
+      ref: ref("silver", "dim_subaccount"),alias: "s",
+      leftKey: "t.sub_acco_no",rightKey: "sub_acco_no",
       columns: ["sub_acco_no", "subaccount_history_key"]
     },
     {
-      ref: ref("silver", "dim_customer"),
-      alias: "c",
-      leftKey: "t.cust_no",
-      rightKey: "cust_no",
+      ref: ref("silver", "dim_customer"),alias: "c",
+      leftKey: "t.cust_no",rightKey: "cust_no",
       columns: ["cust_no", "customer_history_key"]
     },
     {
-      ref: ref("silver", "dim_broker"),
-      alias: "b",
-      leftKey: "s.broker_cd",
-      rightKey: "broker_cd",
+      ref: ref("silver", "dim_broker"),alias: "b",
+      leftKey: "s.broker_cd",rightKey: "broker_cd",
       columns: ["broker_cd", "broker_history_key"]
-    }
+    },
+    {
+      ref: ref("silver", "dim_transaction"), alias: "src_ts",
+      leftKey: "t.src_transaction_cd", rightKey: "transaction_cd",
+      columns: ["transaction_history_key as src_transaction_history_key"]
+    },
+    {
+      ref: ref("silver", "dim_transaction"), alias: "ts",
+      leftKey: "t.transaction_cd", rightKey: "transaction_cd",
+      columns: ["transaction_history_key"]
+    },
   ];
 
   // ============================================================================

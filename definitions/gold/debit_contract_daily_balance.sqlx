@@ -10,7 +10,8 @@ config {
   tags: ["gold", "debit_contract", "fact"],
   bigquery: {
       partitionBy: "business_date",
-      clusterBy: ["sub_acco_no", "contract_id"]
+      clusterBy: ["sub_acco_no", "contract_id"],
+      updatePartitionFilter: "business_date = target_date"
   }
 }
 

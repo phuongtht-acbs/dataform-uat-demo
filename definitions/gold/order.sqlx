@@ -7,7 +7,8 @@ config {
   tags: ["gold", "order", "fact"],
   bigquery: {
       partitionBy: "trade_date",
-      clusterBy: ["org_order_no"]
+      clusterBy: ["org_order_no"],
+      updatePartitionFilter: "trade_date = target_date"
   }
 }
 
