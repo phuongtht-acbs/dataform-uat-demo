@@ -15,6 +15,9 @@ js {
   // ============================================================================
   const source_schema = "silver";                       // Dataset chứa bảng stage nguồn
   const source_table = "stage_cortasset";               // Tên bảng stage nguồn
+  
+  const natural_key = ["sub_acco_no", 'business_date'];
+  const tech_key = "sub_acco_cd";
 
   // ============================================================================
   // BƯỚC 3. Điền các cột ở bảng stage mà cần có ở bảng view
@@ -48,3 +51,5 @@ js {
 SELECT
     ${cols.join(",\n    ")}
 FROM ${source_ref}
+QUALIFY
+ROW_NUMBER() OVER (PARTITION BY ${natural_key.join(", ")} ORDER BY ${tech_key} DESC) = 1
