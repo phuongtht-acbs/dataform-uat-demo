@@ -22,4 +22,16 @@ ${when(!incremental(),
         `SELECT '${table}' AS table_name, DATE('${default_start_date}') AS latest_date, CURRENT_TIMESTAMP() AS _updated_at`
     ).join("\nUNION ALL ")
 )}
-${when(incremental(), `SELECT * FROM ${self()}`)}
+
+${when(incremental(), `
+  WITH expected_tables AS (
+    ${tables_to_track.map(table => `SELECT '${table}' AS table_name`).join("\nUNION ALL ")}
+  )
+  SELECT 
+    e.table_name, 
+    DATE('${default_start_date}') AS latest_date, 
+    CURRENT_TIMESTAMP() AS _updated_at
+  FROM expected_tables e
+  LEFT JOIN ${self()} s ON e.table_name = s.table_name
+  WHERE s.table_name IS NULL
+`)}
