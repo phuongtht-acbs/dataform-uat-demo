@@ -22,7 +22,7 @@ js {
     partitionCol: "trade_date",
     alias: "t",
     columns: [
-      "trade_date", "org_order_no", "is_deleted", "req_no", "req_type", "req_time", 
+      "org_order_no", "is_deleted", "req_no", "req_type", "req_time", 
       "order_no", "confirm_no", "confirm_time", "market_cd", "session_cd", 
       "org_ord_type", "ord_type", "ord_chanel", "sec_cd", "sec_type", "trade_type", 
       "side_type", "ord_qty", "ord_price", "ord_amt", "stop_price", "ord_qty2", 
