@@ -20,10 +20,9 @@ js {
     // ===========================================================================
     // BƯỚC 3: Xác định mức độ chi tiết và logic để deduplicate
     // ===========================================================================
-    const unique_key_cols = ["SUB_ACCO_NO", "SEC_CD", "BALANCE_DATE"];
+    const unique_key_cols = ["SUB_ACCO_CD", "SEC_CD", "BALANCE_DATE"];
     const dedupe_order_by = [
         {field: "InsertTime", sort: "DESC"},
-        {field: "SUB_ACCO_CD", sort: "DESC"},
         {field: "UPD_DATE_TIME", sort: "DESC"}
     ];
     
