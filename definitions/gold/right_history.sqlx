@@ -68,14 +68,14 @@ js {
         {
         ref: ref("silver", "dim_security"),
         alias: "sec",
-        leftKey: "sec_cd",
+        leftKey: "t.sec_cd",
         rightKey: "security_code",
         columns: ["security_history_key"]
         },
         {
         ref: ref("silver", "dim_market"),
         alias: "mkt",
-        leftKey: "market_cd",
+        leftKey: "t.market_cd",
         rightKey: "market_code",
         columns: ["market_history_key"]
         }
@@ -96,6 +96,7 @@ js {
 -- ============================================================================
 -- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
 -- ============================================================================
+pre_operations {DROP TABLE IF EXISTS ${self()};}
 
 SELECT
     -- Các trường từ bảng dim gốc

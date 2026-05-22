@@ -41,6 +41,7 @@ js {
     vsd_branch:         "MSTTBRANCH__VSD_BRANCH"
   };
 }
+pre_operations {DROP TABLE IF EXISTS ${self()};}
 
 -- ============================================================================
 -- LOGIC SQL (KHÔNG CẦN ĐỤNG VÀO)
