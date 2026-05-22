@@ -18,7 +18,7 @@ js {
     ref: ref("silver", "dim_debit_contract"),
     alias: "t",
     columns: [ // Các array columns có thể chứa cả dạng "column_a as alias_b"
-      "dim_debit_contract_key as debit_contract_history_key", "contract_id", "allo_date", "ref_no",
+      "debit_contract_history_key", "contract_id", "allo_date", "ref_no",
       "parent_date", "parent_no", "cust_group_id", "contr_date_from", "contr_date_to",
       "begin_int_date", "debit_type", "amount", "in_rate", "out_rate", "min_interest",
       "manager_in_rate", "manager_out_rate", "min_manager", "free_interest_days", "source_cd",
@@ -100,4 +100,4 @@ ${historyDimensions.map(
 -- Join để lookup giá trị tên thuộc tính
 ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
     ON lkp_${col}.category = '${category}'
-    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}
+    AND cast(${baseTable.alias}.${col} as STRING) = cast(lkp_${col}.attribute_code as STRING)`).join("\n\n")}

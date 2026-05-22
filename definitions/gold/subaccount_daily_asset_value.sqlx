@@ -132,7 +132,7 @@ WITH staging_data AS (
     -- Join để lookup giá trị tên thuộc tính
     ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${lookup_ref} AS lkp_${col}
         ON lkp_${col}.category = '${category}'
-        AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n    ")}
+        AND cast(${baseTable.alias}.${col} as STRING) = cast(lkp_${col}.attribute_code as STRING)`).join("\n\n")}
 
     -- Filter ngày cần xử lý
     ${when(incremental(), `WHERE ${baseTable.alias}.${baseTable.partitionCol} = target_date`)}

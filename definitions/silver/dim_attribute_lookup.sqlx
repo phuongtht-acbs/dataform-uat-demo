@@ -86,20 +86,20 @@ js {
       7: "Lệnh ALGO"
     },
     "ORDTORDER__STATUS": {
-      "K": "Order in prequeue",
-      "H": "Order in queue",
-      "D": "Order canceled in queue (by Cust)",
-      "R": "Order canceled in queue (by Gate)",
-      "P": "Order pending to approve",
-      "S": "Order approved",
-      "X": "Order canceled in company",
-      "E": "Order sending to exchange",
-      "W": "Order waiting confirm from Exchange",
-      "A": "Order approved by exchange",
-      "G": "Order rejected by exchange",
-      "O": "Order pending to match",
-      "M": "Order matched",
-      "C": "Order canceled"
+      "'K'": "Order in prequeue",
+      "'H'": "Order in queue",
+      "'D'": "Order canceled in queue (by Cust)",
+      "'R'": "Order canceled in queue (by Gate)",
+      "'P'": "Order pending to approve",
+      "'S'": "Order approved",
+      "'X'": "Order canceled in company",
+      "'E'": "Order sending to exchange",
+      "'W'": "Order waiting confirm from Exchange",
+      "'A'": "Order approved by exchange",
+      "'G'": "Order rejected by exchange",
+      "'O'": "Order pending to match",
+      "'M'": "Order matched",
+      "'C'": "Order canceled"
     },
     "ORDTORDER__ORD_CHANEL": {
       1: "Back office (Vgaia)",
@@ -168,7 +168,7 @@ js {
   const get_metadata_rows = (metadata) => {
     return Object.keys(metadata).flatMap(category =>
       Object.entries(metadata[category]).map(([code, name]) =>
-        `SELECT '${category.toUpperCase()}' AS category, CAST(${code} AS INT64) AS attribute_code, '${name}' AS attribute_name`
+        `SELECT '${category.toUpperCase()}' AS category, CAST(${code} AS STRING) AS attribute_code, '${name}' AS attribute_name`
       )
     ).join("\n  UNION ALL ");
   }

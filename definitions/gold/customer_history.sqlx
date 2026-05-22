@@ -18,7 +18,7 @@ js {
     ref: ref("silver", "dim_customer"),
     alias: "t",
     columns: [ // Các array columns có thể chứa cả dạng "column_a as alias_b"
-      "dim_customer_key as customer_history_key", "cust_no", "cust_cd", "cust_family_name",
+      "customer_history_key", "cust_no", "cust_cd", "cust_family_name",
       "cust_given_name", "tax_code", "birthday", "mobile_no", "email_adrs", "email_flg",
       "id_number", "issue_location", "issue_date", "expire_date", "country_cd", "job",
       "com3_cust_type", "pres_name", "pres_birthday", "pres_position", "pres_country_cd",
@@ -93,4 +93,4 @@ ${historyDimensions.map(
 -- Join để lookup giá trị tên thuộc tính
 ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
     ON lkp_${col}.category = '${category}'
-    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}
+    AND cast(${baseTable.alias}.${col} as STRING) = cast(lkp_${col}.attribute_code as STRING)`).join("\n\n")}

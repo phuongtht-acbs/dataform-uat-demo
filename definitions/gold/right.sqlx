@@ -1,5 +1,5 @@
 config {
-    type: "table",
+    type: "view",
     schema: "gold",
     name: "right",
     description: "Thông tin hiện tại của quyền chứng khoán",

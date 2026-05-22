@@ -96,4 +96,4 @@ ${historyDimensions.map(
 -- Join để lookup giá trị tên thuộc tính
 ${Object.entries(lookupAttributes).map(([col, category]) => `LEFT JOIN ${ref("silver", "dim_attribute_lookup")} AS lkp_${col}
     ON lkp_${col}.category = '${category}'
-    AND ${baseTable.alias}.${col} = lkp_${col}.attribute_code`).join("\n\n")}
+    AND cast(${baseTable.alias}.${col} as STRING) = cast(lkp_${col}.attribute_code as STRING)`).join("\n\n")}
