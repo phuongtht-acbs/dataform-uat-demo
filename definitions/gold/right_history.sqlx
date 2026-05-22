@@ -69,14 +69,14 @@ js {
         ref: ref("silver", "dim_security"),
         alias: "sec",
         leftKey: "t.sec_cd",
-        rightKey: "security_code",
+        rightKey: "sec_cd",
         columns: ["security_history_key"]
         },
         {
         ref: ref("silver", "dim_market"),
         alias: "mkt",
         leftKey: "t.market_cd",
-        rightKey: "market_code",
+        rightKey: "market_cd",
         columns: ["market_history_key"]
         }
     ];

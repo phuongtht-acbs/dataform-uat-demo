@@ -51,12 +51,13 @@ js {
   // BƯỚC 4: Cấu hình các bảng dim cần join để lấy history key và các trường liên quan
   // ============================================================================
   const historyDimensions = [
-    { ref: ref("silver", "dim_customer"), alias: "dim_cust", leftKey: "t.cust_no", rightKey: "cust_no", columns: ["customer_history_key"] },
-    { ref: ref("silver", "dim_broker"), alias: "dim_brok", leftKey: "t.broker_cd", rightKey: "broker_cd", columns: ["broker_history_key"] },
-    { ref: ref("silver", "dim_security"), alias: "dim_sec", leftKey: "t.sec_cd", rightKey: "sec_cd", columns: ["security_history_key"] },
-    { ref: ref("silver", "dim_transaction"), alias: "dim_trans", leftKey: "t.cust_transaction_cd", rightKey: "cust_transaction_cd", columns: ["transaction_history_key"] },
-    { ref: ref("silver", "dim_subaccount"), alias: "dim_subacc", leftKey: "t.sub_acco_no", rightKey: "sub_acco_no", columns: ["subaccount_history_key"] },
-    { ref: ref("silver", "dim_market"), alias: "dim_mkt", leftKey: "t.market_cd", rightKey: "market_cd", columns: ["market_history_key"] }
+    { ref: ref("silver", "dim_customer"), alias: "c", leftKey: "t.cust_no", rightKey: "cust_no", columns: ["customer_history_key"] },
+    { ref: ref("silver", "dim_broker"), alias: "br", leftKey: "t.broker_cd", rightKey: "broker_cd", columns: ["broker_history_key"] },
+    { ref: ref("silver", "dim_security"), alias: "sec", leftKey: "t.sec_cd", rightKey: "sec_cd", columns: ["security_history_key"] },
+    { ref: ref("silver", "dim_transaction"), alias: "c_tr", leftKey: "t.cust_transaction_cd", rightKey: "transaction_cd", columns: ["transaction_history_key as cust_transaction_history_key"] },
+    { ref: ref("silver", "dim_transaction"), alias: "tr", leftKey: "t.transaction_cd", rightKey: "transaction_cd", columns: ["transaction_history_key"] },
+    { ref: ref("silver", "dim_subaccount"), alias: "sa", leftKey: "t.sub_acco_no", rightKey: "sub_acco_no", columns: ["subaccount_history_key"] },
+    { ref: ref("silver", "dim_market"), alias: "m", leftKey: "t.market_cd", rightKey: "market_cd", columns: ["market_history_key"] }
   ];
   // ============================================================================
   // BƯỚC 5: Cấu hình các thuộc tính cần tra cứu giá trị chữ từ dim_attribute_lookup
