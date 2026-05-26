@@ -1,0 +1,23 @@
+config {
+    type: "view",
+    schema: "silver",
+    name: "dim_date",
+    tags: ["silver", "dimension", "calendar"]
+}
+
+SELECT
+    `Date` AS date,
+    `TradeDate` AS trade_date,
+    `WorkingDate` AS working_date,
+    `Holidays` is null AS is_business_date,
+    `Holidays` AS holidays,
+    `Description` AS description,
+    `CDate` AS c_date,
+    `CYear` AS c_year,
+    `CQuater` AS c_quater,
+    `CMonth` AS c_month,
+    `CWeek` AS c_week,
+    `UpdateTime` AS update_time
+
+FROM
+    ${ref("bronze", "TradingCalendar")}
