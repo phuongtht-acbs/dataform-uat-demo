@@ -18,36 +18,8 @@ js {
 }
 
 pre_operations {
-  -- 1. Khai báo biến
-  DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
-  DECLARE target_date DATE;
-  DECLARE start_date DATE;
-  DECLARE end_date DATE;
-
-  -- 2. Logic xác định thời gian
-    SET target_date = ${dataform.projectConfig.vars.target_date 
-        ? `DATE('${dataform.projectConfig.vars.target_date}')` 
-        : `(SELECT MAX(last_fact_date) FROM ${cur_fact_table_ref})`
-      };
-
-  -- 3. Drop table khi Full Refresh
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
-
-WITH current_dim AS (
-    -- 1. Get the currently active version of the contract's rules/attributes
-    SELECT *
-    FROM ${dim_table_ref}
-    WHERE is_current
-),
-
-current_fact AS (
-    -- 2. Get the absolute latest balance snapshot for each contract
-    -- (This is fast because it's querying the accumulating snapshot table)
-    SELECT *
-    FROM ${cur_fact_table_ref}
-    WHERE last_fact_date = target_date
-)
 
 SELECT
     -- ==========================================
@@ -123,6 +95,6 @@ SELECT
     fact.due_manager,
     fact.last_payed_date,
 
-FROM current_dim AS dim
-INNER JOIN current_fact AS fact ON dim.${unique_key_col} = fact.${unique_key_col}
+FROM ${dim_table_ref} AS dim
+INNER JOIN ${cur_fact_table_ref} AS fact ON dim.${unique_key_col} = fact.${unique_key_col} AND dim.is_current
 ${when(incremental(), `LEFT JOIN ${self()} AS target ON dim.${unique_key_col} = target.${unique_key_col}`)}
