@@ -1,0 +1,53 @@
+config {
+  type: "assertion",
+  schema: "silver",
+  tags: ["bronze_checks", "freshness"],
+  description: "Bridges freshness checks to raw physical bronze layers to validate calendar sync alignment prior to downstream execution."
+}
+
+js {
+  const bronzeTables = [
+    { name: "ORDTORDER_HIST",            col: "TRADE_DATE" },
+    { name: "MRGTDEBIT_CONTRACT_HIST",   col: "BUSINESS_DATE" },
+    { name: "CORTSEC_BALANCE_HISTORY",   col: "BALANCE_DATE" },
+    { name: "CORTCASH_MOVEMENT_HISTORY", col: "ALLO_DATE" },
+    { name: "CORTASSET",                 col: "BUSINESS_DATE" }
+  ];
+
+  // 2. JavaScript engine helper to build clean, unioned metadata scan structures
+  const renderMaxDatesQuery = () => {
+    return bronzeTables.map(t => 
+      `SELECT '${t.name}' AS table_name, MAX(${t.col}) AS max_date FROM ${ref("bronze", t.name)}`
+    ).join("\n  UNION ALL\n  ");
+  };
+}
+
+WITH reference_point AS (
+  SELECT 
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `DATE_SUB(CURRENT_DATE('Asia/Saigon'), INTERVAL 1 DAY)`
+    } AS ref_date
+),
+
+expected_business_date AS (
+  SELECT 
+    COALESCE(
+      (SELECT c_date FROM ${ref("dim_date")} WHERE c_date = rp.ref_date AND is_business_date = true),
+      (SELECT MAX(c_date) FROM ${ref("dim_date")} WHERE c_date <= rp.ref_date AND is_business_date = true)
+    ) AS expected_date
+  FROM reference_point rp
+),
+
+actual_bronze_max_dates AS (
+  ${renderMaxDatesQuery()}
+)
+
+SELECT 
+  table_name,
+  max_date,
+  expected_date,
+  CONCAT("Bronze table data lag! Table '", table_name, "' requires data up to ", CAST(expected_date AS STRING), " but only reached ", CAST(max_date AS STRING)) AS error_message
+FROM actual_bronze_max_dates
+CROSS JOIN expected_business_date
+WHERE max_date < expected_date

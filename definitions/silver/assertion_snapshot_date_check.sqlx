@@ -1,0 +1,45 @@
+config {
+  type: "assertion",
+  schema: "silver",
+  tags: ["bronze_checks", "freshness"],
+  description: "Bridges freshness checks to raw physical bronze layers to validate everyday snapshot alignment prior to downstream execution."
+}
+
+js {
+  const bronzeTables = [
+    { name: "CORTSUB_ACCOUNT", col: "InsertDate" },
+    { name: "RHTTRIGHT_INFO",  col: "InsertDate" },
+    { name: "MSTTSECURITIES",  col: "InsertDate" },
+    { name: "MSTTMARKET",      col: "InsertDate" },
+    { name: "CORTCUSTOMER",    col: "InsertDate" },
+    { name: "BRKTBROKER",      col: "TRADE_DATE" }
+  ];
+
+  // 2. JavaScript engine helper to build clean, unioned metadata scan structures
+  const renderMaxDatesQuery = () => {
+    return bronzeTables.map(t => 
+      `SELECT '${t.name}' AS table_name, MAX(${t.col}) AS max_date FROM ${ref("bronze", t.name)}`
+    ).join("\n  UNION ALL\n  ");
+  };
+}
+
+WITH reference_point AS (
+  SELECT 
+    ${dataform.projectConfig.vars.target_date 
+      ? `DATE('${dataform.projectConfig.vars.target_date}')` 
+      : `DATE_SUB(CURRENT_DATE('Asia/Saigon'), INTERVAL 1 DAY)`
+    } AS ref_date
+),
+
+actual_bronze_max_dates AS (
+  ${renderMaxDatesQuery()}
+)
+
+SELECT 
+  table_name,
+  max_date,
+  ref_date AS expected_date,
+  CONCAT("Bronze table data lag! Table '", table_name, "' requires data up to ", CAST(ref_date AS STRING), " but only reached ", CAST(max_date AS STRING)) AS error_message
+FROM actual_bronze_max_dates
+CROSS JOIN reference_point
+WHERE max_date < ref_date
