@@ -7,7 +7,10 @@ config {
         partitionBy: "snapshot_date",
         updatePartitionFilter: "snapshot_date = target_date"
     },
-    tags: ["silver", "stage", "subaccount", "daily"]
+    tags: ["silver", "stage", "subaccount", "daily"],
+    assertions: {
+        uniqueKey: ["_hash_key"],
+    }
 }
 
 js {
