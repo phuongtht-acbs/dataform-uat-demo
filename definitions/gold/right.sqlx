@@ -3,7 +3,8 @@ config {
     schema: "gold",
     name: "right",
     description: "Thông tin hiện tại của quyền chứng khoán",
-    tags: ["gold", "right", "current"]
+    tags: ["gold", "right", "current"],
+    dependOnDependencyAssertions: true
 }
 
 SELECT *

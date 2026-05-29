@@ -9,7 +9,8 @@ config {
       partitionBy: "trade_date",
       clusterBy: ["org_order_no"],
       updatePartitionFilter: "trade_date = target_date"
-  }
+  },
+  dependOnDependencyAssertions: true
 }
 
 js {

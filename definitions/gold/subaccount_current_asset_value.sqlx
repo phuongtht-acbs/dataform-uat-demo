@@ -10,7 +10,8 @@ config {
   tags: ["gold", "asset_value", "fact", "current"],
   bigquery: {
       clusterBy: ["sub_acco_no"]
-  }
+  },
+  dependOnDependencyAssertions: true
 }
 
 js {

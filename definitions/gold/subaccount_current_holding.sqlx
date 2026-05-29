@@ -10,7 +10,8 @@ config {
   tags: ["gold", "holding", "fact", "current"],
   bigquery: {
       clusterBy: ["sub_acco_no", "sec_cd"]
-  }
+  },
+  dependOnDependencyAssertions: true
 }
 
 js {
