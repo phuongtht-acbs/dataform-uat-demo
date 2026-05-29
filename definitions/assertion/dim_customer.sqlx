@@ -1,0 +1,57 @@
+config {
+  type: "assertion",
+  tags: ["scd2_check"]
+}
+
+WITH source_data AS (
+  SELECT * FROM ${ref("silver", "dim_customer")}
+),
+
+/* 1. ROW CONDITION: flag_coherence */
+check_flag_coherence AS (
+  SELECT 
+    customer_history_key AS failed_key, 
+    'flag_coherence' AS failed_rule 
+  FROM source_data
+  -- Condition is: is_current = (valid_to IS NULL). We select the inverse (the failures).
+  WHERE NOT (is_current = (valid_to IS NULL))
+),
+
+/* 2. ROW CONDITION: timeline_chronology */
+check_timeline_chronology AS (
+  SELECT 
+    customer_history_key AS failed_key, 
+    'timeline_chronology' AS failed_rule 
+  FROM source_data
+  -- Condition is: valid_to IS NULL OR valid_from < valid_to. We select the inverse.
+  WHERE NOT (valid_to IS NULL OR valid_from < valid_to)
+),
+
+/* 3. ROW CONDITION: hash_is_not_null */
+check_hash_is_not_null AS (
+  SELECT 
+    customer_history_key AS failed_key, 
+    'hash_is_not_null' AS failed_rule 
+  FROM source_data
+  -- Condition is: record_hash IS NOT NULL. We select the inverse.
+  WHERE record_hash IS NULL
+),
+
+/* 4. UNIQUE KEY CONDITION */
+check_unique_key AS (
+  SELECT 
+    customer_history_key AS failed_key, 
+    'unique_key_violation' AS failed_rule 
+  FROM source_data
+  GROUP BY customer_history_key
+  HAVING COUNT(*) > 1
+)
+
+/* UNION ALL FAILING RECORDS */
+SELECT * FROM check_flag_coherence
+UNION ALL
+SELECT * FROM check_timeline_chronology
+UNION ALL
+SELECT * FROM check_hash_is_not_null
+UNION ALL
+SELECT * FROM check_unique_key
