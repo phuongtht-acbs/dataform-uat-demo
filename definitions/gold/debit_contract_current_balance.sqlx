@@ -10,7 +10,8 @@ config {
   tags: ["gold", "debit_contract", "fact", "current"],
   bigquery: {
       clusterBy: ["contract_id"]
-  }
+  },
+  dependOnDependencyAssertions: true
 }
 
 js {

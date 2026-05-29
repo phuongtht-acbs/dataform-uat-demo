@@ -10,7 +10,8 @@ config {
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']
-  }
+  },
+  dependOnDependencyAssertions: true
 }
 
 js {

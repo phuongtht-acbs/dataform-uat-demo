@@ -12,7 +12,8 @@ config {
       partitionBy: "business_date",
       clusterBy: ["cust_no", "sub_acco_no"],
       updatePartitionFilter: "business_date = target_date"
-  }
+  },
+  dependOnDependencyAssertions: true
 }
 
 js {

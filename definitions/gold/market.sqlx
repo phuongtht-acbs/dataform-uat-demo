@@ -6,7 +6,8 @@ config {
     schema: "gold",
     name: "market",
     description: "Thông tin hiện tại của các sàn giao dịch",
-    tags: ["gold", "market", "current"]
+    tags: ["gold", "market", "current"],
+    dependOnDependencyAssertions: true
 }
 
 -- ===========================================================================
