@@ -149,6 +149,56 @@ function renderLookupColumns(lookupAttributes) {
   return keys.map(col => `lkp_${col}.attribute_name AS ${col}_name`).join(",\n    ") + ",";
 }
 
+/**
+ * Tạo tự động câu lệnh SQL để kiểm tra chất lượng dữ liệu SCD Type 2 cho các bảng Dimension.
+ * @param {string} tableName - Tên bảng viết dưới dạng chuỗi để lưu vào log lỗi
+ * @param {string} sourceRef - Kết quả của hàm ref("schema", "table")
+ * @param {string} surrogateKey - Tên cột khóa chính lịch sử
+ */
+function checkScd2Dimension(tableName, sourceRef, surrogateKey) {
+  return `
+WITH source_data AS (
+  SELECT * FROM ${sourceRef}
+),
+
+/* 1. Check is_current và valid_to is NULL */
+check_is_current AS (
+  SELECT 
+    '${tableName}' AS table_name,
+    ${surrogateKey} AS failed_key, 
+    'is_current và valid_to không khớp' AS failed_rule 
+  FROM source_data
+  WHERE NOT (is_current = (valid_to IS NULL))
+),
+
+/* 2. Check valid_from có bé hơn valid_to không */
+check_valid_from_valid_to AS (
+  SELECT 
+    '${tableName}' AS table_name,
+    ${surrogateKey} AS failed_key, 
+    'valid_from > valid_to' AS failed_rule 
+  FROM source_data
+  WHERE NOT (valid_to IS NULL OR valid_from < valid_to)
+),
+
+/* 3. Check khóa chính duy nhất không */
+check_unique_key AS (
+  SELECT 
+    '${tableName}' AS table_name,
+    ${surrogateKey} AS failed_key, 
+    'Khóa chính không duy nhất' AS failed_rule 
+  FROM source_data
+  GROUP BY ${surrogateKey}
+  HAVING COUNT(*) > 1
+)
+
+SELECT * FROM check_is_current
+UNION ALL
+SELECT * FROM check_valid_from_valid_to
+UNION ALL
+SELECT * FROM check_unique_key
+  `;
+}
 module.exports = { 
     cleanNullString, 
     cleanNullDate,
@@ -160,5 +210,6 @@ module.exports = {
     updateCheckpoint,
     renderColumns,
     renderHistoryColumns,
-    renderLookupColumns
+    renderLookupColumns,
+    checkScd2Dimension
 };
