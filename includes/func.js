@@ -199,6 +199,29 @@ UNION ALL
 SELECT * FROM check_unique_key
   `;
 }
+/**
+ * Prevents processing a target_date that is older than or equal to 
+ * the maximum existing valid_from date in an SCD2 table.
+ * @param {boolean} isIncremental - Result of Dataform's incremental() function
+ * @param {string} selfRef - Result of Dataform's self() function
+ */
+function guardScd2Timeline(isIncremental, selfRef) {
+  if (!isIncremental) return ""; // Pass safely during initial runs/full refreshes
+  
+return `
+    SET current_max_valid_from = (SELECT MAX(DATE(valid_from)) FROM ${selfRef});
+
+    IF target_date <= COALESCE(current_max_valid_from, DATE('1900-01-01')) THEN
+      RAISE USING MESSAGE = CONCAT(
+        "Vi phạm logic SCD2: target_date ngày (", 
+        CAST(target_date AS STRING), 
+        ") cần phải lớn hơn mốc thời gian max(valid_from) hiện tại của bảng (", 
+        CAST(COALESCE(current_max_valid_from, DATE('1900-01-01')) AS STRING), 
+        ")."
+      );
+    END IF;
+  `;
+}
 module.exports = { 
     cleanNullString, 
     cleanNullDate,
@@ -211,5 +234,6 @@ module.exports = {
     renderColumns,
     renderHistoryColumns,
     renderLookupColumns,
-    checkScd2Dimension
+    checkScd2Dimension,
+    guardScd2Timeline
 };

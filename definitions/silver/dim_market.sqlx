@@ -51,12 +51,14 @@ js {
 pre_operations {
   DECLARE run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
   DECLARE target_date DATE;
+  DECLARE current_max_valid_from DATE;
   
   SET target_date = ${dataform.projectConfig.vars.target_date 
       ? `DATE('${dataform.projectConfig.vars.target_date}')` 
       : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
   };
 
+  ${func.guardScd2Timeline(incremental(), self())}
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
