@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "debit_contract",
     description: "Current active state of Debit Contracts, combining static dimensional attributes with the latest accumulating balance facts.",
-    tags: ["gold", "debit_contract", "current"],
+    tags: ["gold", "current", "debit_contract", "daily"],
     uniqueKey: ["contract_id"],
     bigquery: {
         partitionBy: "allo_date",

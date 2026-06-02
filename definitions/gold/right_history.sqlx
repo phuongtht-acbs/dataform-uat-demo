@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "right_history",
     description: "Lịch sử thông tin của quyền chứng khoán",
-    tags: ["gold", "right", "history"],
+    tags: ["gold", "history", "right", "daily"],
     bigquery: {
         partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']

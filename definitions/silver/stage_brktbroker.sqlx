@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_brktbroker",
-    tags: ["silver", "stage", "daily", "broker"]
+    tags: ["silver", "stage", "broker", "daily"]
 }
 
 js {

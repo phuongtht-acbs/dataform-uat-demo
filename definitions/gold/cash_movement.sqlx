@@ -7,7 +7,7 @@ config {
   name: "cash_movement",
   description: "Bảng thông tin giao dịch tiền đã được denormalized.",
   uniqueKey: ["cash_movement_key"],
-  tags: ["gold", "cash_movement", "fact"],
+  tags: ["gold", "fact", "cash_movement", "daily"],
   bigquery: {
       partitionBy: "business_date",
       clusterBy: ["cust_no", "sub_acco_no"],

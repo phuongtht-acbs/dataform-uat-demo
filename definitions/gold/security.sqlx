@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "security",
     description: "Thông tin hiện tại của mã chứng khoán (Lọc từ security_history với điều kiện bản ghi mới nhất)",
-    tags: ["gold", "security", "current"],
+    tags: ["gold", "current", "security", "daily"],
     dependOnDependencyAssertions: true
 }
 

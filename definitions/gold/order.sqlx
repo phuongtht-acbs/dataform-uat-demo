@@ -4,7 +4,7 @@ config {
   name: "order",
   description: "Thông tin lệnh gốc và lệnh đẩy vào sàn",
   uniqueKey: ["order_key"],
-  tags: ["gold", "order", "fact"],
+  tags: ["gold", "fact", "order", "daily"],
   bigquery: {
       partitionBy: "trade_date",
       clusterBy: ["org_order_no"],

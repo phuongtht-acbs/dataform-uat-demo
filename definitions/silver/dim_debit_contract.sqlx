@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "dim_debit_contract",
   uniqueKey: ["debit_contract_history_key"],                  // Key bảng (nhớ giống với dòng 27)
-  tags: ["silver", "dimension", "daily", "debit_contract"],
+  tags: ["silver", "dimension", "debit_contract", "daily"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']

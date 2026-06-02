@@ -1,6 +1,6 @@
 config {
   type: "assertion",
-  tags: ["scd2_check"],
+  tags: ["assertion", "silver", "scd2_check"],
 }
 
 ${func.checkScd2Dimension("dim_customer", ref("silver", "dim_customer"), "customer_history_key")}

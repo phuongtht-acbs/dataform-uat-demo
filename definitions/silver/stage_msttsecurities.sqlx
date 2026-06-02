@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_msttsecurities",
-    tags: ["silver", "stage", "daily", "security"]
+    tags: ["silver", "stage", "security", "daily"]
 }
 
 js {

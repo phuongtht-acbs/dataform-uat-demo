@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_cortcash_movement_history",
-    tags: ["silver", "stage", "daily", "cash_movement"]
+    tags: ["silver", "stage", "cash_movement", "daily"]
 }
 
 js {

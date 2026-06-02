@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "fact_debit_contract_daily_balance",
   description: "View số dư hàng ngày của hợp đồng nợ",
-  tags: ["silver", "fact", "debit_contract", "view"]
+  tags: ["silver", "fact", "debit_contract", "daily"]
 }
 
 js {

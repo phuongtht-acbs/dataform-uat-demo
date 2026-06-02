@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_mrgtdebit_contract_hist",
-    tags: ["silver", "stage", "daily", "debit_contract"]
+    tags: ["silver", "stage", "debit_contract", "daily"]
 }
 
 js {

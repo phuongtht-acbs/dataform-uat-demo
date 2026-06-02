@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_cortcustomer",
-    tags: ["silver", "stage", "daily", "customer"]
+    tags: ["silver", "stage", "customer", "daily"]
 }
 
 js {

@@ -5,7 +5,7 @@ config {
     type: "table", // table thay vì view để chỉnh partition theo InsertDate
     schema: "silver",
     name: "stage_rhttright_info",
-    tags: ["silver", "stage", "daily", "right"],
+    tags: ["silver", "stage", "right", "daily"],
     bigquery: {partitionBy: "snapshot_date"}
 }
 

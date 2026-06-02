@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "transaction_history",
     description: "Lịch sử thông tin của chi nhánh (MSTTBRANCH)",
-    tags: ["gold", "transaction", "history"],
+    tags: ["gold", "history", "transaction", "daily"],
     bigquery: {
         partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']

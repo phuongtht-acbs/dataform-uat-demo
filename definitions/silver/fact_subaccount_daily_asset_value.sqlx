@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "fact_subaccount_daily_asset_value",
   description: "View giá trị tài sản hàng ngày của tiểu khoản",
-  tags: ["silver", "fact", "asset_value", "view"]
+  tags: ["silver", "fact", "asset_value", "daily"]
 }
 
 js {

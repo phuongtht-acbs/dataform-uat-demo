@@ -7,7 +7,7 @@ config {
   name: "debit_contract_current_balance",
   description: "Accumulating fact table storing the latest balance snapshot for each contract.",
   uniqueKey: ["contract_id"],
-  tags: ["gold", "debit_contract", "fact", "current"],
+  tags: ["gold", "fact", "debit_contract", "current", "daily"],
   bigquery: {
       clusterBy: ["contract_id"]
   },

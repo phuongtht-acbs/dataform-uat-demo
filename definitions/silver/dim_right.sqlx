@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "dim_right",
   uniqueKey: ["right_history_key"],                  
-  tags: ["silver", "dimension", "daily", "right"],
+  tags: ["silver", "dimension", "right", "daily"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']

@@ -2,7 +2,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_msttbranch",
-    tags: ["silver", "stage", "daily", "transaction"]
+    tags: ["silver", "stage", "transaction", "daily"]
 }
 
 js {

@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "broker",
     description: "Thông tin hiện tại của môi giới",
-    tags: ["gold", "broker", "current"],
+    tags: ["gold", "current", "broker", "daily"],
     dependOnDependencyAssertions: true
 }
 

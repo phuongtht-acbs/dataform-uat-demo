@@ -3,7 +3,7 @@ config {
     schema: "silver",
     name: "dim_attribute_lookup",
     description: "Bảng tra cứu mã và tên thuộc tính tập trung, được trích xuất từ tài liệu Excel.",
-    tags: ["silver", "dimension", "lookup", "daily"]
+    tags: ["silver", "utils", "checkpoint", "daily"]
 }
 
 

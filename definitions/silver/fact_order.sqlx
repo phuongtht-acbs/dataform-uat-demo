@@ -6,7 +6,7 @@ config {
     schema: "silver",
     name: "fact_order",
     description: "View thông tin lệnh gốc và lệnh đẩy vào sàn nguồn",
-    tags: ["silver", "fact", "order", "view"]
+    tags: ["silver", "fact", "order", "daily"]
 }
 
 js {

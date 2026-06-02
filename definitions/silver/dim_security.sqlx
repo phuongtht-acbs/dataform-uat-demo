@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "dim_security",
   uniqueKey: ["security_history_key"],                  // Key bảng (nhớ giống với dòng 27)
-  tags: ["silver", "dimension", "daily", "security"],
+  tags: ["silver", "dimension", "security", "daily"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']

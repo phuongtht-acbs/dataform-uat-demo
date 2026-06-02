@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "market_history",
     description: "Lịch sử thông tin sàn giao dịch (MSTTMARKET). Lưu ý: thông tin tại thời điểm valid_from, bất kỳ thay đổi nào ở các đối tượng bên ngoài sau valid_from sẽ không được phản ánh vào đây",
-    tags: ["gold", "market", "history"],
+    tags: ["gold", "history", "market", "daily"],
     bigquery: {
         partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']

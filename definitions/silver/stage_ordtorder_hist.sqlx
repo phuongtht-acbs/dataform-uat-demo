@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_ordtorder_hist",
-    tags: ["silver", "stage", "daily", "ordtorder_hist"]
+    tags: ["silver", "stage", "order", "daily"]
 }
 
 js {

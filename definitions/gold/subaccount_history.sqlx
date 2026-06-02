@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "subaccount_history",
     description: "Lịch sử thông tin của tiểu khoản. Lưu ý: thông tin tại thời điểm valid_from, bất kì thay đổi nào ở các đối tượng bên ngoài (khách hàng, môi giới) sau valid_from sẽ không được phản ánh vào đây",
-    tags: ["gold", "subaccount", "history"],
+    tags: ["gold", "history", "subaccount", "daily"],
     bigquery: {
         partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']

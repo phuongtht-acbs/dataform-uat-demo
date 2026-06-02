@@ -7,7 +7,7 @@ config {
   name: "debit_contract_daily_balance",
   description: "Daily reporting fact table for debit contract balances, fully denormalized with dimension keys.",
   uniqueKey: ["debit_contract_daily_balance_key"],
-  tags: ["gold", "debit_contract", "fact"],
+  tags: ["gold", "fact", "debit_contract", "daily"],
   bigquery: {
       partitionBy: "business_date",
       clusterBy: ["sub_acco_no", "contract_id"],

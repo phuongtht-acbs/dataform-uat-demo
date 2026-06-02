@@ -7,7 +7,7 @@ config {
   name: "subaccount_daily_asset_value",
   description: "Bảng Fact Gold: Giá trị tài sản hàng ngày tích hợp thông tin Dimension",
   uniqueKey: ["subaccount_daily_asset_value_key"],
-  tags: ["gold", "asset_value", "fact"],
+  tags: ["gold", "fact", "asset_value", "daily"],
   bigquery: {
       partitionBy: "business_date",
       clusterBy: ["sub_acco_no"],

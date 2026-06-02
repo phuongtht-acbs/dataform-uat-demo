@@ -7,7 +7,7 @@ config {
   name: "subaccount_daily_holding",
   description: "Bảng Fact Gold: Số dư chứng khoán hàng ngày tích hợp thông tin Dimension",
   uniqueKey: ["subaccount_daily_holding_key"],
-  tags: ["gold", "holding", "fact"],
+  tags: ["gold", "fact", "holding", "daily"],
   bigquery: {
       partitionBy: "business_date",
       clusterBy: ["sub_acco_no", "sec_cd"],

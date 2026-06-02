@@ -3,7 +3,7 @@ config {
   schema: "silver",
   name: "dim_transaction",
   uniqueKey: ["transaction_history_key"],
-  tags: ["silver", "dimension", "daily", "transaction"],
+  tags: ["silver", "dimension", "transaction", "daily"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']

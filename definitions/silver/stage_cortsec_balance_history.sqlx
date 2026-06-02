@@ -5,7 +5,7 @@ config {
     type: "view", 
     schema: "silver",
     name: "stage_cortsec_balance_history",
-    tags: ["silver", "stage", "daily", "holding"]
+    tags: ["silver", "stage", "holding", "daily"]
 }
 
 js {

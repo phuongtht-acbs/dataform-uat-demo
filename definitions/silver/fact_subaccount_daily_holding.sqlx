@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "fact_subaccount_daily_holding",
   description: "View số dư chứng khoán hàng ngày của tiểu khoản",
-  tags: ["silver", "fact", "holding", "view"]
+  tags: ["silver", "fact", "holding", "daily"]
 }
 
 js {

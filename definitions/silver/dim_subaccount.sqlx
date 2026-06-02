@@ -6,7 +6,7 @@ config {
   schema: "silver",
   name: "dim_subaccount",
   uniqueKey: ["subaccount_history_key"],                  // Key bảng (nhớ giống với dòng 27)
-  tags: ["silver", "dimension", "daily", "broker"],
+  tags: ["silver", "dimension", "subaccount", "daily"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']

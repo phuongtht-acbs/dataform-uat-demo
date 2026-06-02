@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "customer_history",
     description: "Lịch sử thông tin của khách hàng. Lưu ý: thông tin tại thời điểm valid_from, bất kì thay đổi nào ở các đối tượng bên ngoài (như môi giới) sau valid_from sẽ không được phản ánh vào đây",
-    tags: ["gold", "customer", "history"],
+    tags: ["gold", "history", "customer", "daily"],
     bigquery: {
         partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']

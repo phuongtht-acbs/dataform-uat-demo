@@ -3,7 +3,7 @@ config {
     schema: "gold",
     name: "debit_contract_history",
     description: "Thông tin của hợp đồng nợ.",
-    tags: ["gold", "debit_contract", "history"],
+    tags: ["gold", "history", "debit_contract", "daily"],
     bigquery: {
         partitionBy: 'DATE(valid_from)',
         clusterBy: ['is_current']

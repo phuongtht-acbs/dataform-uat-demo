@@ -7,7 +7,7 @@ config {
   name: "subaccount_current_holding",
   description: "Accumulating fact table storing the latest holding value for each subaccount and security.",
   uniqueKey: ["sub_acco_no", "sec_cd"],
-  tags: ["gold", "holding", "fact", "current"],
+  tags: ["gold", "fact", "holding", "current", "daily"],
   bigquery: {
       clusterBy: ["sub_acco_no", "sec_cd"]
   },

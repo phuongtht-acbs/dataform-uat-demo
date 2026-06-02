@@ -7,7 +7,7 @@ config {
   name: "subaccount_current_asset_value",
   description: "Accumulating fact table storing the latest asset value for each subaccount.",
   uniqueKey: ["sub_acco_no"],
-  tags: ["gold", "asset_value", "fact", "current"],
+  tags: ["gold", "fact", "asset_value", "current", "daily"],
   bigquery: {
       clusterBy: ["sub_acco_no"]
   },
