@@ -58,7 +58,7 @@ pre_operations {
       : `(SELECT latest_date FROM ${checkpoint_ref} WHERE table_name = '${bronze_source_table}')`
   };
 
-  ${func.guardScd2Timeline(incremental(), self())}
+  ${func.guardScd7Timeline(incremental(), self())}
   ${when(!incremental(), `DROP TABLE IF EXISTS ${self()};`)}
 }
 
@@ -87,7 +87,7 @@ filtered_changes AS (
     SELECT * FROM deduped_history 
     WHERE prev_hash IS NULL OR record_hash != prev_hash
 ),
-scd2_rebuild AS (
+scd7_rebuild AS (
     SELECT
         *,
         ${partition_col} AS valid_from_date,
@@ -102,7 +102,7 @@ SELECT
     CAST(valid_to_date AS TIMESTAMP) AS valid_to,
     (valid_to_date IS NULL) AS is_current,
     * EXCEPT(${partition_col}, prev_hash, valid_from_date, valid_to_date)
-FROM scd2_rebuild
+FROM scd7_rebuild
 `)}
 
 ${when(incremental(), `

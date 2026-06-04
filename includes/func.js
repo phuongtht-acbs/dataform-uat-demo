@@ -84,7 +84,7 @@ function joinHistory(tableRef, alias, leftKey, rightKey, dateCol) {
 }
 
 /**
- * Standardizes SCD2 expiration merge logic for Gold history tables.
+ * Standardizes Scd7 expiration merge logic for Gold history tables.
  * @param {string} targetTable - result of self()
  * @param {string} naturalKey - The business identifier (e.g., 'sub_acco_no')
  * @param {string} stagingQuery - The SQL string for the denormalized data
@@ -155,7 +155,7 @@ function renderLookupColumns(lookupAttributes) {
  * @param {string} sourceRef - Kết quả của hàm ref("schema", "table")
  * @param {string} surrogateKey - Tên cột khóa chính lịch sử
  */
-function checkScd2Dimension(tableName, sourceRef, surrogateKey) {
+function checkScd7Dimension(tableName, sourceRef, surrogateKey) {
   return `
 WITH source_data AS (
   SELECT * FROM ${sourceRef}
@@ -201,11 +201,11 @@ SELECT * FROM check_unique_key
 }
 /**
  * Prevents processing a target_date that is older than or equal to 
- * the maximum existing valid_from date in an SCD2 table.
+ * the maximum existing valid_from date in an Scd7 table.
  * @param {boolean} isIncremental - Result of Dataform's incremental() function
  * @param {string} selfRef - Result of Dataform's self() function
  */
-function guardScd2Timeline(isIncremental, selfRef) {
+function guardScd7Timeline(isIncremental, selfRef) {
   if (!isIncremental) return ""; // Pass safely during initial runs/full refreshes
   
 return `
@@ -213,7 +213,7 @@ return `
 
     IF target_date <= COALESCE(current_max_valid_from, DATE('1900-01-01')) THEN
       RAISE USING MESSAGE = CONCAT(
-        "Vi phạm logic SCD2: target_date ngày (", 
+        "Vi phạm logic Scd7: target_date ngày (", 
         CAST(target_date AS STRING), 
         ") cần phải lớn hơn mốc thời gian max(valid_from) hiện tại của bảng (", 
         CAST(COALESCE(current_max_valid_from, DATE('1900-01-01')) AS STRING), 
@@ -234,6 +234,6 @@ module.exports = {
     renderColumns,
     renderHistoryColumns,
     renderLookupColumns,
-    checkScd2Dimension,
-    guardScd2Timeline
+    checkScd7Dimension,
+    guardScd7Timeline
 };

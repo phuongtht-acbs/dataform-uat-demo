@@ -1,6 +1,6 @@
 config {
   type: "assertion",
-  tags: ["assertion", "silver", "scd2_check"],
+  tags: ["assertion", "silver", "scd7_check"],
 }
 
-${func.checkScd2Dimension("dim_market", ref("silver", "dim_market"), "market_history_key")}
+${func.checkScd7Dimension("dim_market", ref("silver", "dim_market"), "market_history_key")}

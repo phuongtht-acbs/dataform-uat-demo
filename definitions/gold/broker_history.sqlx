@@ -67,7 +67,7 @@ SELECT
     -- Giá trị tên thuộc tính sau khi lookup bảng dim_attribute_lookup
     ${func.renderLookupColumns(lookupAttributes)}
 
-    -- Thông tin SCD2 từ bảng dim gốc
+    -- Thông tin SCD7 từ bảng dim gốc
     ${baseTable.techColumns.map(col => `${baseTable.alias}.${col}`).join(",\n    ")}
 
 FROM ${baseTable.ref} AS ${baseTable.alias}

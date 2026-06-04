@@ -1,6 +1,6 @@
 config {
   type: "assertion",
-  tags: ["assertion", "silver", "scd2_check"],
+  tags: ["assertion", "silver", "scd7_check"],
 }
 
-${func.checkScd2Dimension("dim_debit_contract", ref("silver", "dim_debit_contract"), "debit_contract_history_key")}
+${func.checkScd7Dimension("dim_debit_contract", ref("silver", "dim_debit_contract"), "debit_contract_history_key")}
