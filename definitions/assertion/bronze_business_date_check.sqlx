@@ -31,9 +31,7 @@ WITH reference_point AS (
 ),
 
 expected_business_date AS (
-  SELECT 
-    COALESCE(
-      (SELECT c_date FROM ${ref("dim_date")} WHERE c_date = rp.ref_date AND is_business_date = true),
+  SELECT (
       (SELECT MAX(c_date) FROM ${ref("dim_date")} WHERE c_date <= rp.ref_date AND is_business_date = true)
     ) AS expected_date
   FROM reference_point rp
