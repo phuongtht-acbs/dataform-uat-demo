@@ -55,11 +55,11 @@ js {
       columns: ["broker_history_key", "broker_cd"]
     },
     {
-      ref: ref("silver", "dim_transaction"),
+      ref: ref("silver", "dim_transaction_office"),
       alias: "tr",
       leftKey: "t.transaction_cd",
       rightKey: "transaction_cd",
-      columns: ["transaction_history_key"]
+      columns: ["transaction_office_history_key"]
     }
   ];
 // ============================================================================

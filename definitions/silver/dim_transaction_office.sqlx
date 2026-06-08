@@ -1,9 +1,9 @@
 config {
   type: "incremental",
   schema: "silver",
-  name: "dim_transaction",
-  uniqueKey: ["transaction_history_key"],
-  tags: ["silver", "dimension", "transaction", "daily"],
+  name: "dim_transaction_office",
+  uniqueKey: ["transaction_office_history_key"],
+  tags: ["silver", "dimension", "transaction_office", "daily"],
   bigquery: {
       partitionBy: "DATE(valid_from)",
       clusterBy: ['is_current']
@@ -18,7 +18,7 @@ js {
 
   const natural_key = "transaction_cd";
   const tech_key = "transaction_cd"; 
-  const surrogate_key = "transaction_history_key";
+  const surrogate_key = "transaction_office_history_key";
 
   const dim_cols = [
     "transaction_cd", "is_deleted", "branch_cd", "company_cd", "location_cd", 

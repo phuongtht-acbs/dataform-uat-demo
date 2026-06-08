@@ -16,10 +16,10 @@ js {
 // BƯỚC 1: Config bảng dim nguồn từ silver
 // ============================================================================
   const baseTable = {
-    ref: ref("silver", "dim_transaction"),
+    ref: ref("silver", "dim_transaction_office"),
     alias: "t",
     columns: [ 
-      "transaction_history_key", "transaction_cd", "is_deleted", "branch_cd", 
+      "transaction_office_history_key", "transaction_cd", "is_deleted", "branch_cd", 
       "company_cd", "location_cd", "branch_sname", "branch_name", 
       "branch_adrs_1", "branch_adrs_2", "tel_no", "fax_no", "email_adrs", 
       "zip_cd", "deputy", "broker_cd", "bank_acco_id", "open_cust_display", 

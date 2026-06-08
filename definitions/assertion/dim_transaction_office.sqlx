@@ -1,0 +1,6 @@
+config {
+  type: "assertion",
+  tags: ["assertion", "silver", "scd7_check"],
+}
+
+${func.checkScd7Dimension("dim_transaction_office", ref("silver", "dim_transaction_office"), "transaction_office_history_key")}
