@@ -18,7 +18,7 @@ js {
   // 2. JavaScript engine helper to build clean, unioned metadata scan structures
   const renderMaxDatesQuery = () => {
     return bronzeTables.map(t => 
-      `SELECT '${t.name}' AS table_name, MAX(${t.col}) AS max_date FROM ${ref("bronze", t.name)}`
+      `SELECT '${t.name}' AS table_name, MAX(${t.col}) AS max_date FROM ${ref("bronze", t.name)} WHERE ${t.col} >= DATE_SUB(CURRENT_DATE('Asia/Saigon'), INTERVAL 30 DAY)`
     ).join("\n  UNION ALL\n  ");
   };
 }
